@@ -872,7 +872,6 @@ class xschemSymIimportDialogue(QDialog):
         self.parent = parent
         self.logger = self.parent.logger
         self.model = model
-        print(self.model)
         self.setWindowTitle("Xschem Symbol File Importer")
         self.setMinimumSize(500, 300)
         mainLayout = QVBoxLayout()
