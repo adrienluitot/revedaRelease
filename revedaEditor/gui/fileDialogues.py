@@ -254,6 +254,10 @@ class closeLibDialog(QDialog):
         formLayout = QFormLayout()
         self.libNamesCB = QComboBox()
         self.libNamesCB.addItems(self.libraryDict.keys())
+        selectedItems = parent.designView.selectionModel().selectedRows()
+        if len(selectedItems) > 0:
+            self.libNamesCB.setCurrentText(selectedItems[0].data())
+        
         formLayout.addRow(edf.boldLabel("Select Library", self), self.libNamesCB)
         layout.addLayout(formLayout)
         layout.addSpacing(40)
