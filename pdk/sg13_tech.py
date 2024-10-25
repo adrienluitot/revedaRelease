@@ -30,7 +30,7 @@ class SG13_Tech():
 
         with open(techFilePath, "r") as tech_file:
             jsData = json.load(tech_file)
-            self._techParams = jsData["Parameters"]
+            self._techParams = jsData["techParams"]
 
             layers = jsData["Layers"]
             self._layers = {}
