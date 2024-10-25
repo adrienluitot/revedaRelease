@@ -1119,7 +1119,7 @@ class schematicScene(editorScene):
         fixedFamily = [
             family for family in fontFamilies if QFontDatabase.isFixedPitch(family)
         ][0]
-        fontStyle = QFontDatabase.styles(fixedFamily)[1]
+        fontStyle = QFontDatabase.styles(fixedFamily)[0] #TODO: why it was [1] ? Proably a better way to ensure an existing font
         self.fixedFont = QFont(fixedFamily)
         self.fixedFont.setStyleName(fontStyle)
         fontSize = [size for size in QFontDatabase.pointSizes(fixedFamily, fontStyle)][

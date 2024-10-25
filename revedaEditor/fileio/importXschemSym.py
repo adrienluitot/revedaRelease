@@ -35,7 +35,7 @@ from PySide6.QtCore import (
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.schBackEnd as scb
-import revedaEditor.gui.editorWindow as edw
+import revedaEditor.gui.symbolEditor as syed
 import revedaEditor.common.shapes as shp
 import revedaEditor.common.labels as lbl
 import revedaEditor.fileio.symbolEncoder as symenc
@@ -84,7 +84,7 @@ class importXschemSym:
             self.parent, self.libraryView.libraryModel, libItem, self.cellName
         )
         symbolViewItem = scb.createCellView(self.parent, "symbol", cellItem)
-        self.symbolWindow = edw.symbolEditor(
+        self.symbolWindow = syed.symbolEditor(
             symbolViewItem, self.parent.libraryDict, self.libraryView
         )
         self.symbolScene = self.symbolWindow.centralW.scene
