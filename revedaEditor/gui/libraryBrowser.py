@@ -199,7 +199,8 @@ class libraryBrowser(QMainWindow):
             libName = libCloseDialog.libNamesCB.currentText()
             libItem = libm.getLibItem(self.libraryModel, libName)
             self.libraryDict.pop(libName, None)
-            self.libraryModel.rootItem.removeRow(libItem)
+            self.libraryModel.rootItem.removeRow(libItem.row())
+            self.writeLibDefFile(self.libraryDict, self.libFilePath) # update lib file after remove
 
     def libraryEditorClick(self, s):
         """
@@ -207,9 +208,8 @@ class libraryBrowser(QMainWindow):
         """
         tempDict = deepcopy(self.libraryDict)
         pathEditDlg = fd.libraryPathEditorDialog(self, tempDict)
-        libDefFilePathObj = pathlib.Path.cwd().joinpath("library.json")
-        self.libraryDict.clear()
         if pathEditDlg.exec() == QDialog.Accepted:
+            self.libraryDict.clear() # TODO: why ??? it just delete the lib without refilling it 
             model = pathEditDlg.pathsModel
             for row in range(model.rowCount()):
                 if model.itemFromIndex(model.index(row, 1)).text().strip():
@@ -218,9 +218,9 @@ class libraryBrowser(QMainWindow):
                     ] = pathlib.Path(
                         model.itemFromIndex(model.index(row, 1)).text().strip()
                     )
-        self.writeLibDefFile(self.libraryDict, libDefFilePathObj)
-        self.appMainW.libraryDict = self.libraryDict
-        self.designView.reworkDesignLibrariesView(self.appMainW.libraryDict)
+            self.writeLibDefFile(self.libraryDict, self.libFilePath)
+            self.appMainW.libraryDict = self.libraryDict
+            self.designView.reworkDesignLibrariesView(self.appMainW.libraryDict)
 
     def updateLibraryClick(self):
         self.designView.reworkDesignLibrariesView(self.appMainW.libraryDict)
