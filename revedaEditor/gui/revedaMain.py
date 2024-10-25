@@ -116,11 +116,6 @@ class MainWindow(QMainWindow):
         self.libraryBrowser = libw.libraryBrowser(self)
         self.logger_def()
         # revEDAPathObj = Path(__file__)
-        # library definition file path
-        self.runPath = pathlib.Path.cwd()
-        # look for library.json file where the script is invoked
-        self.libraryPathObj = self.runPath.joinpath("library.json")
-        self.libraryDict = self.readLibDefFile(self.libraryPathObj)
         self.textEditorPath: pathlib.Path = self.runPath
         self.threadPool = QThreadPool.globalInstance()
         self.confFilePath = self.runPath.joinpath("reveda.conf")
