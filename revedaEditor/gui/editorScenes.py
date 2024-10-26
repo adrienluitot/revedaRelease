@@ -141,7 +141,10 @@ class editorScene(QGraphicsScene):
         self.messageLine = self.editorWindow.messageLine
         self.statusLine = self.editorWindow.statusLine
         self.installEventFilter(self)
-        self.setMinimumRenderSize(2)
+        self.setMinimumRenderSize(2) 
+
+        self.setSceneRect(-5e5, -5e5, 1e6, 1e6) # this is to be able to zoom out more than boundingRect
+        # it may need a bigger scene rect ? or smaller devices ?
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
@@ -305,8 +308,10 @@ class editorScene(QGraphicsScene):
                 self.messageLine.setText("Nothing selected")
 
     def fitItemsInView(self) -> None:
-        self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))
-        self.views()[0].fitInView(self.sceneRect(), Qt.KeepAspectRatio)
+        # TODO: itemsBoundingRect() processes all the items in the view, it might be very slow if the number of item is
+        # consequent. We should find a better solution (like storing the items in the extreme postions to compute the 
+        # bounding rect with only 4 items instead of N)
+        self.views()[0].fitInView(self.itemsBoundingRect().adjusted(-40, -40, 40, 40), Qt.KeepAspectRatio)
         self.views()[0].viewport().update()
 
     def moveSceneLeft(self) -> None:
@@ -1941,7 +1946,7 @@ class schematicScene(editorScene):
             with file.open(mode="w") as f:
                 json.dump(topLevelItems, f, cls=schenc.schematicEncoder, indent=4)
             # if there is a parent editor, to reload the changes.
-            print(self.editorWindow.parentEditor)
+            # print(self.editorWindow.parentEditor)
             if self.editorWindow.parentEditor is not None:
                 editorType = self.findEditorTypeString(self.editorWindow.parentEditor)
                 if editorType == "schematicEditor":
@@ -1962,7 +1967,7 @@ class schematicScene(editorScene):
         if index == -1:
             return str(type(editorWindow))
         else:
-            print(str(type(editorWindow))[index + 1 : -2])
+            # print(str(type(editorWindow))[index + 1 : -2])
             return str(type(editorWindow))[index + 1 : -2]
 
     def loadSchematicItems(self, itemsList: list[dict]) -> None:
@@ -2788,7 +2793,7 @@ class layoutScene(editorScene):
             starttime = time.time()
             self.createLayoutItems(decodedData[2:])
             endtime = time.time()
-            print(f"load time: {endtime-starttime}")
+            # print(f"load time: {endtime-starttime}")
         except Exception as e:
             self.logger.error(f"Cannot load layout: {e}")
 

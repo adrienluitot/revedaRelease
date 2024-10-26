@@ -68,11 +68,11 @@ class editorView(QGraphicsView):
         Returns:
             None
         """
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # TODO: this might be an option
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         # self.setCacheMode(QGraphicsView.CacheBackground)
         self.setMouseTracking(True)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setInteractive(True)
         self.setCursor(Qt.CrossCursor)
         self.setRenderHint(QPainter.Antialiasing, True)
@@ -88,18 +88,22 @@ class editorView(QGraphicsView):
             event (QWheelEvent): The wheel event to handle.
         """
         # Get the current center point of the view
-        oldPos = self.mapToScene(self.viewport().rect().center())
+        oldPos = event.position().toPoint()
+        mappedOldPos = self.mapToScene(oldPos)
+        self.centerOn(mappedOldPos)
 
         # Perform the zoom
-        self.zoomFactor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
+        self.zoomFactor = 1.2 if event.angleDelta().y() > 0 else 0.8
         self.scale(self.zoomFactor, self.zoomFactor)
 
         # Get the new center point of the view
         newPos = self.mapToScene(self.viewport().rect().center())
 
         # Calculate the delta and adjust the scene position
-        delta = newPos - oldPos
-        self.translate(delta.x(), delta.y())
+        delta = self.mapToScene(oldPos) - self.mapToScene(self.viewport().rect().center())
+
+        #TODO: zoom not on cursor but centered on viewport when very elements fit in viewport
+        self.centerOn(mappedOldPos - delta)
         self.zoomFactorChanged.emit(self.zoomFactor)
 
     def snapToBase(self, number, base):
