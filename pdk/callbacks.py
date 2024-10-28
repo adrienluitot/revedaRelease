@@ -81,13 +81,13 @@ class sg13_hv_pmos(baseInst):
 class cap_cmim(baseInst):
     def __init__(self, labels_dict: dict):
         super().__init__(labels_dict)
-        self.W = Quantity(self._labelsDict["@W"].labelValue)
-        self.L = Quantity(self._labelsDict["@L"].labelValue)
-        self.MF = Quantity(self._labelsDict["@MF"].labelValue)
+        self.w = Quantity(self._labelsDict["@w"].labelValue)
+        self.l = Quantity(self._labelsDict["@l"].labelValue)
+        self.m = Quantity(self._labelsDict["@m"].labelValue)
 
     def Cparm(self):
-        returnValue = self.MF * (
-            self.W * self.L * 1.5e-3 + 2 * (self.W + self.L) * 40e-12
+        returnValue = self.m * (
+            self.w * self.l * 1.5e-3 + 2 * (self.w + self.l) * 40e-12
         )
         return returnValue
 

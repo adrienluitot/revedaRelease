@@ -1455,10 +1455,10 @@ class schematicSymbol(symbolShape):
         If instance name is changed and [@instName] label exists, change it too.
         """
         self._instanceName = value
-        if self.labels.get("instanceName", None):
-            self.labels["instanceName"].labelValue = value
-            # self.labels["instanceName"].labelValueSet = True
-            self.labels["instanceName"].update()
+
+        if self.labels.get("@instName", None):
+            self.labels["@instName"].labelValue = (value)
+            self.labels["@instName"].update()
 
     @property
     def counter(self) -> int:
