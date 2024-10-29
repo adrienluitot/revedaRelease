@@ -55,6 +55,7 @@ from PySide6.QtGui import (
     QPen,
     QFontDatabase,
     QFont,
+    QMouseEvent,
 )
 from PySide6.QtWidgets import (
     QComboBox,
@@ -164,10 +165,13 @@ class editorScene(QGraphicsScene):
         super().mouseReleaseEvent(event)
         if event.button() == Qt.LeftButton:
             self.mouseReleaseLoc = event.scenePos().toPoint()
-            if self._items:
-                if self.mouseReleaseLoc != self.mousePressLoc:
-                    self.moveShapesUndoStack(self._items, self._itemsOffset, self.mousePressLoc,
-                                            self.mouseReleaseLoc)
+            # TODO: the under condition is to avoid to move a placed net when the click is released after the cursor
+            # has moved. This condition should be added for other action (like drawPath). Maybe there is a better solution
+            if not self.editModes.drawWire:
+                if self._items:
+                    if self.mouseReleaseLoc != self.mousePressLoc:
+                        self.moveShapesUndoStack(self._items, self._itemsOffset, self.mousePressLoc,
+                                                self.mouseReleaseLoc)
 
     def snapToBase(self, number, base):
         """
@@ -383,10 +387,11 @@ class editorScene(QGraphicsScene):
         self.undoStack.push(undoCommand)
 
     def addUndoMacroStack(self, undoCommands: list, macroName: str = "Macro"):
-        self.undoStack.beginMacro(macroName)
-        for command in undoCommands:
-            self.undoStack.push(command)
-        self.undoStack.endMacro()
+        if len(undoCommands) > 0:
+            self.undoStack.beginMacro(macroName)
+            for command in undoCommands:
+                self.undoStack.push(command)
+            self.undoStack.endMacro()
 
 
 # noinspection PyUnresolvedReferences
@@ -1180,7 +1185,8 @@ class schematicScene(editorScene):
                     self.newInstance.setSelected(True)
                 elif self.editModes.drawWire:
                     self.editorWindow.messageLine.setText("Wire Mode")
-                    if self._newNet:
+                    if self._newNet is not None:
+                        self.mousePressLoc = self._newNet.sceneEndPoints[1]
                         self.checkNewNet(self._newNet)
                         self._newNet = None
                     self.mousePressLoc = self.findSnapPoint(
@@ -1252,7 +1258,7 @@ class schematicScene(editorScene):
                         self.mousePressLoc, self.mouseMoveLoc
                     )
                     if self._newNet.scene() is None:
-                        self.addUndoStack(self._newNet)
+                        self.addItem(self._newNet)
                 elif self.editModes.stretchItem and self._stretchNet is not None:
                     self._stretchNet.draftLine = QLineF(
                         self._stretchNet.draftLine.p1(), self.mouseMoveLoc
@@ -1286,15 +1292,23 @@ class schematicScene(editorScene):
             self.logger.error(f"mouse release error: {e}")
         super().mouseReleaseEvent(mouse_event)
 
-    def checkNewNet(self, newNet: net.schematicNet):
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton:
+            if self._newNet is not None:
+                self.removeSnapRect()
+                self.checkNewNet(self._newNet, True)
+                self._newNet = None
+        self.editModes.setMode("selectItem")
+
+    def checkNewNet(self, newNet: net.schematicNet, endNet=False):
         """
         check if the new net is valid. If it has zero length, remove it. Otherwise process it.
 
         """
-        if newNet.draftLine.isNull():
+        if endNet is False:
             self.removeItem(newNet)
-            self.undoStack.removeLastCommand()
-        else:
+        if not newNet.draftLine.isNull():
+            self.addUndoStack(newNet)
             self.mergeSplitNets(newNet)
 
     def mergeSplitNets(self, inputNet: net.schematicNet):
@@ -1321,8 +1335,9 @@ class schematicScene(editorScene):
                 splitNetList.append(splitNet)
                 if inputNet.isSelected():
                     splitNet.setSelected(True)
-            self.addListUndoStack(splitNetList)
-            self.deleteUndoStack(self._totalNet)
+            for item in splitNetList:
+                self.addItem(item)
+            self.removeItem(self._totalNet)
 
 
     def mergeNets(self, inputNet: net.schematicNet) -> net.schematicNet:
@@ -1946,7 +1961,6 @@ class schematicScene(editorScene):
             with file.open(mode="w") as f:
                 json.dump(topLevelItems, f, cls=schenc.schematicEncoder, indent=4)
             # if there is a parent editor, to reload the changes.
-            # print(self.editorWindow.parentEditor)
             if self.editorWindow.parentEditor is not None:
                 editorType = self.findEditorTypeString(self.editorWindow.parentEditor)
                 if editorType == "schematicEditor":
@@ -1989,7 +2003,8 @@ class schematicScene(editorScene):
                 # increment item counter for next symbol
                 self.instanceCounter += 1
             shapesList.append(itemShape)
-        self.undoStack.push(us.loadShapesUndo(self, shapesList))
+        for item in shapesList:
+            self.addItem(item) 
 
     def reloadScene(self):
         topLevelItems = [item for item in self.items() if item.parentItem() is None]
@@ -2403,6 +2418,14 @@ class layoutScene(editorScene):
         point *= fabproc.dbu
         return point
 
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton:
+            if self._newPath is not None:
+                self._endPath(True)
+            elif self._newRect is not None:
+                self._newRect = None
+        self.editModes.setMode("selectItem")
+
     def mousePressEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         """
         Handle the mouse press event.
@@ -2429,13 +2452,19 @@ class layoutScene(editorScene):
                 if self.editModes.drawPath:
                     self.editorWindow.messageLine.setText("Wire mode")
                     if self._newPath:
-                        if self._newPath.draftLine.isNull():
-                            self.removeItem(self._newPath)
-                            self.undoStack.removeLastCommand()
-                        self._newPath = None
+                        # continue the path from where it stopped
+                        startPoint = QLineF(self._newPath.sceneEndPoints[1], self._newPath.sceneEndPoints[1])
+                        # TODO: take in account start/end extend to avoid a hole ?
+                        self._endPath(False)
+                        # TODO: this is called 2 times when double clicking (0 time would be better). It is not really a
+                        # problem, but if the user move its mouse during the double click, it will create a path before
+                        # finishing it.
+                    else:
+                        # new path, start from mouse position
+                        startPoint = QLineF(self.mousePressLoc, self.mousePressLoc)
                     # Create a new path
                     self._newPath = lshp.layoutPath(
-                        QLineF(self.mousePressLoc, self.mousePressLoc),
+                        startPoint,
                         self.newPathTuple.layer,
                         self.newPathTuple.width,
                         self.newPathTuple.startExtend,
@@ -2547,7 +2576,7 @@ class layoutScene(editorScene):
                     self._newPath.draftLine.p1(), self.mouseMoveLoc
                 )
                 if self._newPath.scene() is None:
-                    self.addUndoStack(self._newPath)
+                    self.addItem(self._newPath)
             elif self.editModes.drawRuler and self._newRuler is not None:
                 self._newRuler.draftLine = QLineF(
                     self._newRuler.draftLine.p1(), self.mouseMoveLoc
@@ -2678,6 +2707,12 @@ class layoutScene(editorScene):
         except Exception as e:
             self.logger.error(f"mouse release error: {e}")
 
+    def _endPath(self, finishPath):
+        if not finishPath:
+            self.removeItem(self._newPath) # remove preview before adding it with undo stack
+        if not self._newPath.draftLine.isNull():
+            self.addUndoStack(self._newPath)
+        self._newPath = None
 
     def instLayout(self):
         """
@@ -2762,10 +2797,18 @@ class layoutScene(editorScene):
         """
         try:
             # Only save the top-level items
-
-            topLevelItems = [item for item in self.items() if item.parentItem() is None]
+            topLevelItems = []
             topLevelItems.insert(0, {"cellView": "layout"})
             topLevelItems.insert(1, {"snapGrid": self.snapTuple})
+            topLevelItems.extend(
+                [item for item in self.items() if item.parentItem() is None]
+            )
+            for item in self.items():
+                if item.parentItem() is None:
+                    item.scene() # refresh view to avoid to delete if has no parent 
+                    # TODO: This is a strange behaviour, if item has no parentItem it is removed/hidden from the scene
+                    # calling the getter .scene() seem to refresh the item or whatever. There must be a better way to
+                    # fix this. Schematic items don't seem to have a similar bug
             with filePathObj.open("w") as file:
                 # Serialize items to JSON using layoutEncoder class
                 json.dump(topLevelItems, file, cls=layenc.layoutEncoder)
@@ -2804,10 +2847,8 @@ class layoutScene(editorScene):
                 for item in decodedData
                 if item.get("type") in self.layoutShapes
             ]
-            # A hack to get loading working. Otherwise, when it is saved the top-level items
-            # get destroyed.
-            undoCommand = us.loadShapesUndo(self, loadedLayoutItems)
-            self.undoStack.push(undoCommand)
+            for item in loadedLayoutItems:
+                self.addItem(item)
 
     def reloadScene(self):
         # Get the top level items from the scene

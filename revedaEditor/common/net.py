@@ -117,26 +117,8 @@ class schematicNet(QGraphicsItem):
         self._nameFont.setPointSize(8)
         self._nameItem = QStaticText(self._name)
         self._draftLine = QLineF(start, end)
-        self._transformOriginPoint = self._draftLine.p1()
         self._angle = None
-        match self._mode:
-            case 0:
-                self._angle = 90 * math.floor(
-                    ((self._draftLine.angle() + 45) % 360) / 90
-                )
-            case 1:
-                self._angle = 45 * math.floor(
-                    ((self._draftLine.angle() + 22.5) % 360) / 45
-                )
-            case 2:
-                self._angle = self._draftLine.angle()
-        self._draftLine.setAngle(0)
-        self.setTransformOriginPoint(self._transformOriginPoint)
-        self._shapeRect = QRectF(self._draftLine.p1(), self._draftLine.p2()).adjusted(
-            -2, -2, 2, 2
-        )
-        self._boundingRect = self._shapeRect.adjusted(-8, -8, 8, 8)
-        self.setRotation(-self._angle)
+        self._setupDraftline()
 
     @property
     def draftLine(self):
@@ -146,7 +128,10 @@ class schematicNet(QGraphicsItem):
     def draftLine(self, line: QLineF):
         self.prepareGeometryChange()
         self._draftLine = line
-        self._transformOriginPoint = line.p1()
+        self._setupDraftline()
+    
+    def _setupDraftline(self):
+        self._transformOriginPoint = self._draftLine.p1()
         match self._mode:
             case 0:
                 self._angle = 90 * math.floor(
@@ -158,9 +143,12 @@ class schematicNet(QGraphicsItem):
                 )
             case 2:
                 self._angle = self._draftLine.angle()
+        tmpDraftLine = self._draftLine.translated(0,0) # hack to prevent getting a reference
         self._draftLine.setAngle(0)
+        if self._mode == 0:
+            # perpendicular mode -> fix coord to stay aligned with cursor
+            self._fixDraftLine90(tmpDraftLine)
         self.setTransformOriginPoint(self._transformOriginPoint)
-
         self._shapeRect = (
             QRectF(self._draftLine.p1(), self._draftLine.p2())
             .normalized()
@@ -168,6 +156,17 @@ class schematicNet(QGraphicsItem):
         )
         self._boundingRect = self._shapeRect.adjusted(-8, -8, 8, 8)
         self.setRotation(-self._angle)
+    
+    def _fixDraftLine90(self, unmodifiedDraftLine) -> None:
+        match self._angle:
+            case 0: #right
+                self._draftLine.setP2(QPointF(unmodifiedDraftLine.x2(), self._draftLine.y2()))
+            case 90: #top
+                self._draftLine.setP2(QPointF(unmodifiedDraftLine.x1()+unmodifiedDraftLine.y1()-unmodifiedDraftLine.y2(), self._draftLine.y1()))
+            case 180: #left
+                self._draftLine.setP2(QPointF(2*unmodifiedDraftLine.x1()-unmodifiedDraftLine.x2(), self._draftLine.y1()))
+            case 270: #bottom
+                self._draftLine.setP2(QPointF(unmodifiedDraftLine.x1()-unmodifiedDraftLine.y1()+unmodifiedDraftLine.y2(), self._draftLine.y1()))
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()

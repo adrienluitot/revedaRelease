@@ -264,7 +264,7 @@ class undoRotateShape(QUndoCommand):
         self._scene = scene
         self._shape = shape
         self._angle = angle
-        self.setText("Undo Shape rotation")
+        self.setText("Shape rotation")
 
     def undo(self) -> None:
         self._shape.setRotation(self._angle - 90)
@@ -281,6 +281,7 @@ class undoMoveShapesCommand(QUndoCommand):
         self._shapesOffsetList = shapesOffsetList
         self._startPos = startPos
         self._endPos = endPos
+        self.setText("Move Shape")
 
 
     def undo(self):

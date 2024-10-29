@@ -105,6 +105,10 @@ class editorWindow(QMainWindow):
         self._createTriggers()
         self._createShortcuts()
 
+    def setCentralWidget(self, centralWidget):
+        super().setCentralWidget(centralWidget)
+        self._createSceneTriggers()
+
     def _createMenuBar(self):
         """
         Creates the menu bar for the editor.
@@ -217,10 +221,12 @@ class editorWindow(QMainWindow):
 
         undoIcon = QIcon(":/icons/arrow-circle-315-left.png")
         self.undoAction = QAction(undoIcon, "Undo", self)
+        self.undoAction.setDisabled(True)
         self.undoAction.setToolTip("Undo the last action")
 
         redoIcon = QIcon(":/icons/arrow-circle-225.png")
         self.redoAction = QAction(redoIcon, "Redo", self)
+        self.redoAction.setDisabled(True)
         self.redoAction.setToolTip("Redo the last undone action")
 
         yankIcon = QIcon(":/icons/node-insert.png")
@@ -498,6 +504,10 @@ class editorWindow(QMainWindow):
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
 
+    def _createSceneTriggers(self):
+        self.centralW.scene.undoStack.canUndoChanged.connect(self.undoStackChanged)
+        self.centralW.scene.undoStack.canRedoChanged.connect(self.redoStackChanged)
+
     def _createShortcuts(self):
         self.redoAction.setShortcut("Shift+U")
         self.undoAction.setShortcut(Qt.Key_U)
@@ -662,9 +672,15 @@ class editorWindow(QMainWindow):
 
     def undoClick(self, s):
         self.centralW.scene.undoStack.undo()
+        
+    def undoStackChanged(self, canUndo):
+        self.undoAction.setEnabled(canUndo)
 
     def redoClick(self, s):
         self.centralW.scene.undoStack.redo()
+
+    def redoStackChanged(self, canRedo):
+        self.redoAction.setEnabled(canRedo)
 
     def rotateItemClick(self, s):
         self.centralW.scene.editModes.setMode("rotateItem")

@@ -9,6 +9,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QMouseEvent,
     QKeyEvent,
     QPainter,
     QWheelEvent,
@@ -286,7 +287,6 @@ class schematicView(editorView):
             if isinstance(guideLineItem, net.guideLine)
         }
         self.removeSnapLines(viewSnapLinesSet)
-
         self.mergeSplitViewNets()
 
     def mergeSplitViewNets(self):
@@ -300,7 +300,6 @@ class schematicView(editorView):
                 self.scene.mergeSplitNets(netItem)
 
     def removeSnapLines(self, viewSnapLinesSet):
-
         undoCommandList = []
         for snapLine in viewSnapLinesSet:
             lines: list[net.schematicNet] = self.scene.addStretchWires(
@@ -312,7 +311,8 @@ class schematicView(editorView):
                     line.inheritGuideLine(snapLine)
                 undoCommandList.append(us.addShapesUndo(self.scene, lines))
 
-        undoCommandList.append(us.deleteShapesUndo(self.scene, list(viewSnapLinesSet)))
+        if len(viewSnapLinesSet) > 0:
+            undoCommandList.append(us.deleteShapesUndo(self.scene, list(viewSnapLinesSet)))
         self.scene.addUndoMacroStack(undoCommandList, 'Stretch Wires')
 
     def drawBackground(self, painter, rect):
@@ -350,6 +350,7 @@ class schematicView(editorView):
             self.scene.removeSnapRect()
             if self.scene._newNet is not None:
                 # New net creation mode, cancel creation
+                self.scene.removeItem(self.scene._newNet)
                 self.scene._newNet = None
             elif self.scene._stretchNet is not None:
                 # Stretch net mode, cancel stretch
@@ -371,8 +372,11 @@ class layoutView(editorView):
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Escape:
             if self.scene._newPath is not None:
+                self.scene.removeItem(self.scene._newPath)
                 self.scene._newPath = None
-            elif self.scene._newRect:
+            elif self.scene._newRect is not None:
+                self.scene.removeItem(self.scene._newRect)
+                self.scene.undoStack.removeLastCommand() #TODO: would be cleaner to not push to undo if not validated (like for the path)
                 self.scene._newRect = None
             elif self.scene._stretchPath is not None:
                 self.scene._stretchPath.setSelected(False)

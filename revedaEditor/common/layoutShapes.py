@@ -660,10 +660,26 @@ class layoutPath(layoutShape):
                 self._createHorizontalPath(angle)
             case 4:
                 self._createVerticalPath(angle)
+        tmpDraftLine = self._draftLine.translated(0,0) # hack to prevent getting a reference
         self._draftLine.setAngle(0)
+        # self._draftLine.setAngle(self._angle)
+        if self._mode in [0, 3, 4]:
+            # perpendicular mode -> fix coord to stay aligned with cursor
+            self._fixDraftLine90(tmpDraftLine)
         self._rect = self._extractRect()
         self.setTransformOriginPoint(self.draftLine.p1())
-        self.setRotation(-self._angle)
+        self.setRotation(-self._angle)        
+    
+    def _fixDraftLine90(self, unmodifiedDraftLine) -> None:
+        match self._angle:
+            case 0: #right
+                self._draftLine.setP2(QPointF(unmodifiedDraftLine.x2(), self._draftLine.y2()))
+            case 90: #top
+                self._draftLine.setP2(QPointF(unmodifiedDraftLine.x1()+unmodifiedDraftLine.y1()-unmodifiedDraftLine.y2(), self._draftLine.y1()))
+            case 180: #left
+                self._draftLine.setP2(QPointF(2*unmodifiedDraftLine.x1()-unmodifiedDraftLine.x2(), self._draftLine.y1()))
+            case 270: #bottom
+                self._draftLine.setP2(QPointF(unmodifiedDraftLine.x1()-unmodifiedDraftLine.y1()+unmodifiedDraftLine.y2(), self._draftLine.y1()))
 
     def _createManhattanPath(self, angle: float) -> None:
         """
