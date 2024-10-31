@@ -65,11 +65,11 @@ class mainwContainer(QWidget):
     def init_UI(self):
         self.console.setfont(QFont("Fira Mono Regular", 12))
         self.console.writeoutput(
-            f"Welcome to Revolution EDA version {revinit.__version__}"
+            f"Welcome to Revolution EDA version {revinit.__version__}\n"
         )
-        self.console.writeoutput("Revolution Semiconductor (C) 2024.")
+        self.console.writeoutput("Revolution Semiconductor (C) 2024.\n")
         self.console.writeoutput(
-            "Mozilla Public License v2.0 modified with Commons Clause"
+            "Mozilla Public License v2.0 modified with Commons Clause\n"
         )
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()

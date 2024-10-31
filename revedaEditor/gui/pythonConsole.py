@@ -38,7 +38,7 @@ from PySide6.QtCore import (
     QEvent,
     QSize,
 )
-from PySide6.QtGui import QTextCharFormat, QBrush, QColor, QFont
+from PySide6.QtGui import QTextCharFormat, QBrush, QColor, QFont, QTextCursor
 from PySide6.QtWidgets import QLineEdit, QWidget, QGridLayout, QPlainTextEdit
 
 
@@ -53,7 +53,7 @@ class LineEdit(QLineEdit):
         super().__init__()
         self.historymax = history
         self.clearhistory()
-        self.promptpattern = re.compile("^[>\.]")
+        self.promptpattern = re.compile("^[>.]")
 
     def clearhistory(self) -> None:
         """Clear history buffer"""
@@ -187,8 +187,9 @@ class pythonConsole(QWidget):
         else:
             lines = line.split("\n")
             for line in lines:
-                if re.match("^[\>\.] ", line):
+                if re.match("^[>.] ", line):
                     line = line[2:]
+                line+="\r\n"
                 self.writeoutput(self.prompt + line, self.inpfmt)
                 self.setprompt(". ")
                 self.buffer.append(line)
@@ -207,7 +208,7 @@ class pythonConsole(QWidget):
     def write(self, line: str) -> None:
         """Capture stdout and display in outdisplay"""
         if len(line) != 1 or ord(line[0]) != 10:
-            self.writeoutput(line.rstrip(), self.outfmt)
+            self.writeoutput(line+"\n", self.outfmt)
 
     def errorwrite(self, line: str) -> None:
         """Capture stderr and display in outdisplay"""
@@ -217,7 +218,8 @@ class pythonConsole(QWidget):
         """Set text formatting and display line in outdisplay"""
         if fmt is not None:
             self.outdisplay.setCurrentCharFormat(fmt)
-        self.outdisplay.appendPlainText(line.rstrip())
+        self.outdisplay.insertPlainText(line)
+        self.outdisplay.moveCursor(QTextCursor.End)
 
     def sizeHint(self):
         return QSize(500, 200)
