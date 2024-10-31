@@ -23,6 +23,7 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 import pathlib
+import inspect
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -77,12 +78,16 @@ class importXschemSym:
         self._pins = []
         self._tclExpressLines = []
         self._expressionDict = {}
+        self._importFailed = False 
         self.cellName = self.filePathObj.stem
         libItem = libm.getLibItem(self.libraryView.libraryModel, self.libraryName)
 
         cellItem = scb.createCell(
             self.parent, self.libraryView.libraryModel, libItem, self.cellName
         )
+        if cellItem == None:
+            self._importFailed = True
+            return None
         symbolViewItem = scb.createCellView(self.parent, "symbol", cellItem)
         self.symbolWindow = syed.symbolEditor(
             symbolViewItem, self.parent.libraryDict, self.libraryView
@@ -90,7 +95,6 @@ class importXschemSym:
         self.symbolScene = self.symbolWindow.centralW.scene
         
     def importSymFile(self):
-
         with self.filePathObj.open("r") as file:
             for line in file.readlines():
                 lineTokens = line.split()
@@ -233,6 +237,10 @@ class importXschemSym:
 
 
     @property
+    def importFailed(self) -> bool:
+        return self._importFailed
+
+    @property
     def scaleFactor(self) -> float:
         return self._scaleFactor
 
@@ -317,34 +325,41 @@ class importXschemSym:
         for (key, value) in zip(parameterMatches, tclEvalMatches):
             self._expressionDict[key] = value
 
-        clbPathObj = pathlib.Path(cb.__file__)
-        with clbPathObj.open("a") as clbFile:
-            clbFile.write("\n\n")
-            clbFile.write(f"class {self.cellName}(baseInst):\n")
-            clbFile.write(f"    def __init__(self, labels_dict:dict):\n")
-            clbFile.write(f"        super().__init__(labels_dict)\n")
-            for labelName in self._labelList:
-                clbFile.write(f"        self.{labelName[1:]} = Quantity(self._labelsDict["
-                              f"'{labelName}'].labelValue)\n")
-
-            for key, value in self._expressionDict.items():
+        if self.cellName in list( zip(* inspect.getmembers(cb, lambda x: isinstance(x, type) ) ) )[0]:
+            # class already exists
+            # TODO: this might cause problem if a cell has the same name in different library. Should manage callback in
+            # library rather than in PDK ?
+            # TODO: just skip ? replace ? copy ? ask user ?
+            self.parent.logger.warning(f"Callback for {self.cellName} already exists in pdk.")
+        else:
+            clbPathObj = pathlib.Path(cb.__file__)
+            with clbPathObj.open("a") as clbFile:
+                clbFile.write("\n\n")
+                clbFile.write(f"class {self.cellName}(baseInst):\n")
+                clbFile.write(f"    def __init__(self, labels_dict:dict):\n")
+                clbFile.write(f"        super().__init__(labels_dict)\n")
                 for labelName in self._labelList:
-                    value = value.replace(labelName, f'self.{labelName[1:]}')
+                    clbFile.write(f"        self.{labelName[1:]} = Quantity(self._labelsDict["
+                                f"'{labelName}'].labelValue)\n")
+
+                for key, value in self._expressionDict.items():
+                    for labelName in self._labelList:
+                        value = value.replace(labelName, f'self.{labelName[1:]}')
+                    clbFile.write("\n")
+                    clbFile.write(f"    def {key}parm(self):\n")
+                    clbFile.write(f"       returnValue = {value}\n")
+                    clbFile.write(f"       return returnValue\n")
+                    label = lbl.symbolLabel(
+                        QPoint(0, 0),
+                        f"{key} = {key}parm()",
+                        lbl.symbolLabel.labelTypes[2],
+                        self._labelHeight,
+                        lbl.symbolLabel.labelAlignments[0],
+                        lbl.symbolLabel.labelOrients[0],
+                        lbl.symbolLabel.labelUses[1],
+                        )
+                    label.labelDefs()
+                    label.labelVisible = True
+                    label.setOpacity(1)
+                    self.symbolScene.addItem(label)
                 clbFile.write("\n")
-                clbFile.write(f"    def {key}parm(self):\n")
-                clbFile.write(f"       returnValue = {value}\n")
-                clbFile.write(f"       return returnValue\n")
-                label = lbl.symbolLabel(
-                    QPoint(0, 0),
-                    f"{key} = {key}parm()",
-                    lbl.symbolLabel.labelTypes[2],
-                    self._labelHeight,
-                    lbl.symbolLabel.labelAlignments[0],
-                    lbl.symbolLabel.labelOrients[0],
-                    lbl.symbolLabel.labelUses[1],
-                    )
-                label.labelDefs()
-                label.labelVisible = True
-                label.setOpacity(1)
-                self.symbolScene.addItem(label)
-            clbFile.write("\n")

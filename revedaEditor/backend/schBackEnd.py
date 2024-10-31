@@ -34,6 +34,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QMessageBox
 
+import revedaEditor.backend.libraryMethods as libm
+
 
 class libraryItem(QStandardItem):
     def __init__(self, libraryPath: pathlib.Path):  # path is a pathlib.Path object
@@ -176,15 +178,22 @@ def createCell(parent, model, selectedLib, cellName):
             QMessageBox.warning(parent, "Error", "Please enter a cell name")
             return None
         elif cellPath.exists():
-            QMessageBox.warning(
-                parent, "Error", "Cell already exits. Delete cell first."
+            userResponse = QMessageBox.warning(
+                parent, "Error", f"Cell {cellName} already exists in lib {selectedLib.libraryName}. Do you want to replace it?",
+                QMessageBox.No | QMessageBox.Yes
             )
-            return None
+            #TODO: implement yes to all ? 
+            if userResponse == QMessageBox.No:
+                return None           
+
+            existingCellItem = libm.getCellItem(selectedLib, cellName)
+            return existingCellItem
         else:
             cellPath.mkdir()
             newCellItem = cellItem(cellPath)
             selectedLib.appendRow(newCellItem)
             parent.logger.info(f"Created {cellName} cell at {str(cellPath)}")
+
             return newCellItem
 
 

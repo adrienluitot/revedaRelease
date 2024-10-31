@@ -337,8 +337,9 @@ class MainWindow(QMainWindow):
                     self.libraryBrowser.designView,
                     importLibraryName,
                 )
-                importObj.scaleFactor = scaleFactor
-                importObj.importSymFile()
+                if not importObj.importFailed:
+                    importObj.scaleFactor = scaleFactor
+                    importObj.importSymFile()
 
     def importSpiceSubckt(self, viewT: ddef.viewTuple, filePath: str):
         # Get the library model
