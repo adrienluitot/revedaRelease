@@ -141,6 +141,7 @@ class editorScene(QGraphicsScene):
         self.logger = self.appMainW.logger
         self.messageLine = self.editorWindow.messageLine
         self.statusLine = self.editorWindow.statusLine
+        self.editorType = None
         self.installEventFilter(self)
         self.setMinimumRenderSize(2) 
 
@@ -167,11 +168,13 @@ class editorScene(QGraphicsScene):
             self.mouseReleaseLoc = event.scenePos().toPoint()
             # TODO: the under condition is to avoid to move a placed net when the click is released after the cursor
             # has moved. This condition should be added for other action (like drawPath). Maybe there is a better solution
-            if not self.editModes.drawWire:
-                if self._items:
-                    if self.mouseReleaseLoc != self.mousePressLoc:
-                        self.moveShapesUndoStack(self._items, self._itemsOffset, self.mousePressLoc,
-                                                self.mouseReleaseLoc)
+            if self.editorType == "sch":
+                if self.editModes.drawWire == True:
+                    return None
+            
+            if self._items:
+                if self.mouseReleaseLoc != self.mousePressLoc:
+                    self.moveShapesUndoStack(self._items, self._itemsOffset, self.mousePressLoc, self.mouseReleaseLoc)
 
     def snapToBase(self, number, base):
         """
@@ -421,6 +424,7 @@ class symbolScene(editorScene):
             drawPolygon=False,
             stretchItem=False,
         )
+        self.editorType = "sym"
 
         self.symbolShapes = ["line", "arc", "freearc", "rect", "circle", "pin", "label", "polygon"]
 
@@ -1136,6 +1140,7 @@ class schematicScene(editorScene):
             addInstance=False,
             stretchItem=False,
         )
+        self.editorType = "sch"
         self.selectModes = ddef.schematicSelectModes(
             selectAll=True,
             selectDevice=False,
@@ -2365,6 +2370,7 @@ class layoutScene(editorScene):
             stretchItem=False,
             addInstance=False,
         )
+        self.editorType = "lay"
         self.editModes.setMode("selectItem")
         self.selectModes = ddef.layoutSelectModes(
             selectAll=True,
