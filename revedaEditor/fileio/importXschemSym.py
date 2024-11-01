@@ -109,6 +109,17 @@ class importXschemSym:
                             self._scaleFactor * float(lineTokens[5]),
                         ),
                     )
+                elif line[0] == "A" and len(lineTokens) > 5:
+                    center = QPoint(
+                        self._scaleFactor * float(lineTokens[2]),
+                        self._scaleFactor * float(lineTokens[3])
+                    )
+                    self.symbolScene.freeArcDraw(
+                        center,
+                        self._scaleFactor * float(lineTokens[4]), # radius
+                        float(lineTokens[5]), # start angle
+                        float(lineTokens[6]), # span angle
+                    )
                 elif line[0] == "B" and len(lineTokens) > 4:
                     properties = self.findProperties(line)
                     if "name" in properties.keys():

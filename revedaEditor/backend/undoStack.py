@@ -178,6 +178,22 @@ class updateSymArcUndo(updateSymUndo):
         self._item.width = self._newItemList[2]
         self._item.height = self._newItemList[3]
 
+class updateSymFreeArcUndo(updateSymUndo):
+    def __init__(self, item: QGraphicsItem, oldItemList: list, newItemList: list):
+        super().__init__(item, oldItemList, newItemList)
+
+    def undo(self):
+        self._item.center = QPoint(self._oldItemList[0], self._oldItemList[1])
+        self._item.radius = self._oldItemList[2]
+        self._item.startAngle = self._oldItemList[3]
+        self._item.angleSpan = self._oldItemList[4]
+
+    def redo(self):
+        self._item.center = QPoint(self._newItemList[0], self._newItemList[1])
+        self._item.radius = self._newItemList[2]
+        self._item.startAngle = self._newItemList[3]
+        self._item.angleSpan = self._newItemList[4]
+
 
 class updateSymLineUndo(updateSymUndo):
     def __init__(self, item: QGraphicsItem, oldItemList: list, newItemList: list):

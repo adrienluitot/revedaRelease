@@ -104,6 +104,16 @@ class symbolEncoder(json.JSONEncoder):
                     "ang": item.angle,
                 }
                 return itemDict
+            case shp.symbolFreeArc:
+                itemDict = {
+                    "type": "freearc",
+                    "cen": item.center.toTuple(),
+                    "loc": (item.scenePos() - item.scene().origin).toTuple(),
+                    "rad": item.radius,
+                    "sa": item.startAngle,
+                    "as": item.angleSpan,
+                }
+                return itemDict
             case shp.symbolPin:
                 itemDict = {
                     "type": "pin",

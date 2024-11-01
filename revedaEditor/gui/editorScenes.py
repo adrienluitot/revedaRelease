@@ -422,7 +422,7 @@ class symbolScene(editorScene):
             stretchItem=False,
         )
 
-        self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
+        self.symbolShapes = ["line", "arc", "freearc", "rect", "circle", "pin", "label", "polygon"]
 
         self.origin = QPoint(0, 0)
         # some default attributes
@@ -657,6 +657,15 @@ class symbolScene(editorScene):
         self.undoStack.push(undoCommand)
         return arc
 
+    def freeArcDraw(self, center: QPoint, radius: int, startAngle: float, angleSpan: float):
+        """
+        Draws an arc inside the rectangle defined by center, radius, start angle and span angle.
+        """
+        freeArc = shp.symbolFreeArc(center, radius, startAngle, angleSpan)
+        undoCommand = us.addShapeUndo(self, freeArc)
+        self.undoStack.push(undoCommand)
+        return freeArc
+
     def pinDraw(self, current):
         pin = shp.symbolPin(current, self.pinName, self.pinDir, self.pinType)
         # self.addItem(pin)
@@ -770,6 +779,16 @@ class symbolScene(editorScene):
                 self.queryDlg.heightEdit.setText(str(item.height))
                 if self.queryDlg.exec() == QDialog.Accepted:
                     self.updateArcShape(item)
+            elif isinstance(item, shp.symbolFreeArc):
+                self.queryDlg = pdlg.freeArcPropertyDialog(self.editorWindow)
+                center = item.mapToScene(item.center).toTuple()
+                self.queryDlg.centerXEdit.setText(str(center[0]))
+                self.queryDlg.centerYEdit.setText(str(center[1]))
+                self.queryDlg.radiusEdit.setText(str(item.radius))
+                self.queryDlg.startAngleEdit.setText(str(item.startAngle))
+                self.queryDlg.angleSpanEdit.setText(str(item.angleSpan))
+                if self.queryDlg.exec() == QDialog.Accepted:
+                    self.updateFreeArcShape(item)
             elif isinstance(item, shp.symbolLine):
                 self.queryDlg = pdlg.linePropertyDialog(self.editorWindow)
                 sceneLineStartPoint = item.mapToScene(item.start).toPoint()
@@ -877,6 +896,26 @@ class symbolScene(editorScene):
         )
         newItemList = [start.x(), start.y(), width, height]
         undoCommand = us.updateSymArcUndo(item, origItemList, newItemList)
+        self.undoStack.push(undoCommand)
+    
+    def updateFreeArcShape(self, item: shp.symbolArc):
+        origItemList = [item.center.x(), item.center.y(), item.radius, item.startAngle, item.angleSpan]
+        centerX = self.snapToBase(
+            float(self.queryDlg.centerXEdit.text()), self.snapTuple[0]
+        )
+        centerY = self.snapToBase(
+            float(self.queryDlg.centerYEdit.text()), self.snapTuple[1]
+        )
+        center = item.mapFromScene(
+            self.snapToGrid(QPoint(centerX, centerY), self.snapTuple)
+        )
+        radius = self.snapToBase(
+            float(self.queryDlg.radiusEdit.text()), self.snapTuple[0]
+        )
+        startAngle = float(self.queryDlg.startAngleEdit.text())
+        angleSpan = float(self.queryDlg.angleSpanEdit.text())
+        newItemList = [center.x(), center.y(), radius, startAngle, angleSpan]
+        undoCommand = us.updateSymFreeArcUndo(item, origItemList, newItemList)
         self.undoStack.push(undoCommand)
 
     def updateLineShape(self, item: shp.symbolLine):

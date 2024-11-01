@@ -28,6 +28,7 @@ from functools import cached_property
 
 from PySide6.QtCore import (
     QPoint,
+    QPointF,
     QRect,
     QRectF,
     Qt,
@@ -728,6 +729,88 @@ class symbolArc(symbolShape):
                 self._end = self._rect.topLeft()
             self._rect = QRectF(self._start, self._end).normalized()
 
+
+class symbolFreeArc(symbolShape):
+    """
+    Class to draw free arc shapes. 
+    """
+
+    def __init__(self, center: QPoint, radius: float, startAngle: float, angleSpan: float):
+        super().__init__()
+        self._center = center
+        self._radius = radius
+        self._startAngle = startAngle
+        self._angleSpan = angleSpan
+        tlPoint = QPointF(center.x()-radius, center.y()-radius)
+        brPoint = QPointF(center.x()+radius, center.y()+radius)
+        self._rect = QRectF(tlPoint, brPoint)
+        self._pen = symlyr.symbolPen
+
+    def paint(self, painter, option, widget) -> None:
+        if self.isSelected():
+            painter.setPen(symlyr.selectedSymbolPen)
+            painter.drawRect(self.bRect)
+            self.setZValue(symlyr.selectedSymbolLayer.z)
+        else:
+            painter.setPen(symlyr.symbolPen)
+            self.setZValue(symlyr.symbolLayer.z)
+
+        self.arcDraw(painter)
+
+    def arcDraw(self, painter):
+        painter.drawArc(self._rect, self._startAngle*16, self._angleSpan * 16)
+
+    def boundingRect(self):
+        return self.bRect
+    
+    @property
+    def bRect(self):
+        brect = QRectF(
+            self._rect
+        ).adjusted(-2, -2, 2, 2)
+        return brect
+    
+    @property
+    def center(self):
+        return self._center
+
+    @center.setter
+    def center(self, center: QPoint):
+        self.prepareGeometryChange()
+        self._center = center
+        tlPoint = QPointF(center.x()-self._radius, center.y()-self._radius)
+        brPoint = QPointF(center.x()+self._radius, center.y()+self._radius)
+        self._rect = QRectF(tlPoint, brPoint)
+
+    @property
+    def radius(self):
+        return self._radius
+    
+    @radius.setter
+    def radius(self, radius: int):
+        self.prepareGeometryChange()
+        self._radius = radius
+        tlPoint = QPointF(self._center.x()-radius, self._center.y()-radius)
+        brPoint = QPointF(self._center.x()+radius, self._center.y()+radius)
+        self._rect = QRectF(tlPoint, brPoint)
+
+    @property
+    def startAngle(self):
+        return self._startAngle
+    
+    @startAngle.setter
+    def startAngle(self, startAngle: int):
+        self.prepareGeometryChange()
+        self._startAngle = startAngle
+
+    @property
+    def angleSpan(self):
+        return self._angleSpan
+    
+    @angleSpan.setter
+    def angleSpan(self, angleSpan: int):
+        self.prepareGeometryChange()
+        self._angleSpan = angleSpan
 
 class symbolLine(symbolShape):
     """

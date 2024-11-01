@@ -148,6 +148,33 @@ class arcPropertyDialog(QDialog):
         self.setLayout(self.mainLayout)
         self.show()
 
+class freeArcPropertyDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("Free Arc Properties")
+        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.mainLayout = QVBoxLayout()
+        self.fLayout = QFormLayout()
+        self.fLayout.setContentsMargins(10, 10, 10, 10)
+        self.centerXEdit = edf.shortLineEdit()
+        self.fLayout.addRow(QLabel("Center (X):"), self.centerXEdit)
+        self.centerYEdit = edf.shortLineEdit()
+        self.fLayout.addRow(QLabel("Center (Y):"), self.centerYEdit)
+        self.radiusEdit = edf.shortLineEdit()
+        self.fLayout.addRow(QLabel("Radius:"), self.radiusEdit)
+        self.startAngleEdit = edf.shortLineEdit()
+        self.fLayout.addRow(QLabel("Start Angle (°):"), self.startAngleEdit)
+        self.angleSpanEdit = edf.shortLineEdit()
+        self.fLayout.addRow(QLabel("Angle Span (°):"), self.angleSpanEdit)
+        self.mainLayout.addLayout(self.fLayout)
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.mainLayout.addWidget(self.buttonBox)
+        self.setLayout(self.mainLayout)
+        self.show()
+
 
 class linePropertyDialog(QDialog):
     def __init__(self, parent):

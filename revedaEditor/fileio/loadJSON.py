@@ -75,6 +75,8 @@ class symbolItems:
                     return self.createCircleItem(item)
                 case "arc":
                     return self.createArcItem(item)
+                case "freearc":
+                    return self.createFreeArcItem(item)
                 case "line":
                     return self.createLineItem(item)
                 case "pin":
@@ -121,6 +123,17 @@ class symbolItems:
         arc.setPos(QPoint(item["loc"][0], item["loc"][1]))
         arc.angle = item["ang"]
         return arc
+    
+    def createFreeArcItem(self, item: dict):
+        center = QPoint(item["cen"][0], item["cen"][1])
+        radius = item["rad"]
+        startAngle = item["sa"]
+        angleSpan = item["as"]
+
+        freearc = shp.symbolFreeArc(center, radius, startAngle, angleSpan)
+        # for scene
+        freearc.setPos(QPoint(item["loc"][0], item["loc"][1]))
+        return freearc
 
     def createLineItem(self, item: dict):
         start = QPoint(item["st"][0], item["st"][1])
