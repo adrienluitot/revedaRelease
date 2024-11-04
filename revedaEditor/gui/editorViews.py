@@ -8,11 +8,13 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
+    QGuiApplication,
     QColor,
     QMouseEvent,
     QKeyEvent,
     QPainter,
     QWheelEvent,
+    QInputDevice
 )
 from PySide6.QtWidgets import (
     QGraphicsView,
@@ -57,6 +59,8 @@ class editorView(QGraphicsView):
         self._bottom: QPoint = QPoint(0, 0)
         self.viewRect = QRect(0, 0, 0, 0)
         self.zoomFactor = 1.0
+        self._middleClickScroll = False
+        self._middleClickScrollDelta = QPoint(0,0)
         self.init_UI()
 
     def init_UI(self):
@@ -81,6 +85,30 @@ class editorView(QGraphicsView):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
 
 
+    def mousePressEvent(self, mouse_event) -> None:
+        super().mousePressEvent(mouse_event)
+        if mouse_event.button() == Qt.MiddleButton:
+            # Start middle click scroll
+            self._middleClickScroll = True
+            self._middleClickScrollDelta = mouse_event.position().toPoint()
+    
+    def mouseReleaseEvent(self, mouse_event) -> None:
+        super().mouseReleaseEvent(mouse_event)
+        if self._middleClickScroll and mouse_event.button() == Qt.MiddleButton:
+            # Release middle click scroll
+            self._middleClickScroll = False
+
+    def mouseMoveEvent(self, mouse_event) -> None:
+        super().mouseMoveEvent(mouse_event)
+        if self._middleClickScroll:
+            # Apply middle click scroll
+            newPos = mouse_event.position().toPoint()
+            oldX = self.horizontalScrollBar().value()
+            oldY = self.verticalScrollBar().value()
+            self.horizontalScrollBar().setValue(oldX + self._middleClickScrollDelta.x() - newPos.x())
+            self.verticalScrollBar().setValue(oldY + self._middleClickScrollDelta.y() - newPos.y())
+            self._middleClickScrollDelta = mouse_event.position().toPoint()
+
     def wheelEvent(self, event: QWheelEvent) -> None:
         """
         Handle the wheel event for zooming in and out of the view.
@@ -88,24 +116,40 @@ class editorView(QGraphicsView):
         Args:
             event (QWheelEvent): The wheel event to handle.
         """
-        # Get the current center point of the view
-        oldPos = event.position().toPoint()
-        mappedOldPos = self.mapToScene(oldPos)
-        self.centerOn(mappedOldPos)
+        modifiers = QGuiApplication.keyboardModifiers()
 
-        # Perform the zoom
-        self.zoomFactor = 1.2 if event.angleDelta().y() > 0 else 0.8
-        self.scale(self.zoomFactor, self.zoomFactor)
+        if event.pointingDevice().type() == QInputDevice.DeviceType.Mouse and modifiers == Qt.ShiftModifier:
+            angle = event.angleDelta().x() # if shift is pressed, wheel angle is on the x attrivute
+        else:
+            angle = event.angleDelta().y()
 
-        # Get the new center point of the view
-        newPos = self.mapToScene(self.viewport().rect().center())
+        if angle == 0: return None
 
-        # Calculate the delta and adjust the scene position
-        delta = self.mapToScene(oldPos) - self.mapToScene(self.viewport().rect().center())
+        if modifiers == Qt.ShiftModifier:
+            #shift: up -> left / down -> right
+            self.scene.moveSceneHor(angle)
+        elif modifiers == Qt.ControlModifier:
+            #ctrl: up -> top / down -> down
+            self.scene.moveSceneVer(angle)
+        else:
+            # Get the current center point of the view
+            center = self.viewport().rect().center()
+            oldPos = event.position().toPoint()
+            oldScroll = QPoint(self.horizontalScrollBar().value(), self.verticalScrollBar().value())
+            delta = oldPos - center
+            self.horizontalScrollBar().setValue(oldScroll.x() + delta.x())
+            self.verticalScrollBar().setValue(oldScroll.y() + delta.y())
 
-        #TODO: zoom not on cursor but centered on viewport when very elements fit in viewport
-        self.centerOn(mappedOldPos - delta)
-        self.zoomFactorChanged.emit(self.zoomFactor)
+            # Perform the zoom
+            self.zoomFactor = 1 + (angle / 360 * 0.6)
+            self.scale(self.zoomFactor, self.zoomFactor)
+
+            # Get the new scroll position
+            oldScroll = QPoint(self.horizontalScrollBar().value(), self.verticalScrollBar().value())
+
+            self.horizontalScrollBar().setValue(oldScroll.x() - delta.x())
+            self.verticalScrollBar().setValue(oldScroll.y() - delta.y())
+            self.zoomFactorChanged.emit(self.zoomFactor)
 
     def snapToBase(self, number, base):
         """

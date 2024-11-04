@@ -321,49 +321,41 @@ class editorScene(QGraphicsScene):
         self.views()[0].fitInView(self.itemsBoundingRect().adjusted(-40, -40, 40, 40), Qt.KeepAspectRatio)
         self.views()[0].viewport().update()
 
+    def moveSceneVer(self, moveFactor) -> None:
+        view = self.views()[0]
+        currScroll = view.verticalScrollBar().value()
+        shift = moveFactor/360 * view.viewport().height()/2
+        view.verticalScrollBar().setValue(currScroll - shift)
+
+    def moveSceneHor(self, moveFactor) -> None:
+        view = self.views()[0]
+        currScroll = view.horizontalScrollBar().value()
+        shift = moveFactor/360 * view.viewport().width()/2
+        view.horizontalScrollBar().setValue(currScroll - shift)
+
     def moveSceneLeft(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(
-            currentSceneRect.left() - halfWidth,
-            currentSceneRect.top(),
-            currentSceneRect.width(),
-            currentSceneRect.height(),
-        )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.horizontalScrollBar().value()
+        newScroll = currScroll - view.viewport().width()/3
+        view.horizontalScrollBar().setValue(newScroll)
 
     def moveSceneRight(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(
-            currentSceneRect.left() + halfWidth,
-            currentSceneRect.top(),
-            currentSceneRect.width(),
-            currentSceneRect.height(),
-        )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.horizontalScrollBar().value()
+        newScroll = currScroll + view.viewport().width()/3
+        view.horizontalScrollBar().setValue(newScroll)
 
     def moveSceneUp(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(
-            currentSceneRect.left(),
-            currentSceneRect.top() - halfWidth,
-            currentSceneRect.width(),
-            currentSceneRect.height(),
-        )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.verticalScrollBar().value()
+        newScroll = currScroll - view.viewport().height()/3
+        view.verticalScrollBar().setValue(newScroll)
 
     def moveSceneDown(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(
-            currentSceneRect.left(),
-            currentSceneRect.top() + halfWidth,
-            currentSceneRect.width(),
-            currentSceneRect.height(),
-        )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.verticalScrollBar().value()
+        newScroll = currScroll + view.viewport().height()/3
+        view.verticalScrollBar().setValue(newScroll)
 
     def centerViewOnPoint(self, point: QPoint) -> None:
         view = self.views()[0]
