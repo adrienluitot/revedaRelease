@@ -87,6 +87,7 @@ import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.propertyDialogues as pdlg
 
 import os
+import math
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -111,6 +112,7 @@ class editorScene(QGraphicsScene):
         self.majorGrid = self.editorWindow.majorGrid
         self.snapTuple = self.editorWindow.snapTuple
         self.mousePressLoc = None
+        self.mouseNotReleased = False
         self.mouseMoveLoc = None
         self.mouseReleaseLoc = None
         # common edit modes
@@ -132,8 +134,9 @@ class editorScene(QGraphicsScene):
         self.cellName = self.editorWindow.file.parent.stem
         self.partialSelection = True
         self.selectionRectItem = None
-        self._items = []
-        self._itemsOffset = []
+        self._lastSelects = []
+        self._itemsToMove = []
+        self._itemsToMoveOffset = []
         self.libraryDict = self.editorWindow.libraryDict
         self.editModes.rotateItem = False
         self.itemContextMenu = QMenu()
@@ -149,32 +152,86 @@ class editorScene(QGraphicsScene):
         # it may need a bigger scene rect ? or smaller devices ?
 
     def mousePressEvent(self, event):
-        super().mousePressEvent(event)
+        self.mousePressLoc = event.scenePos().toPoint()
+        self.mouseNotReleased = True
+            
         if event.button() == Qt.LeftButton:
-            self._itemsOffset = []
-            self.mousePressLoc = event.scenePos().toPoint()
-            self._items = [item for item in self.items(self.mousePressLoc) if
-                           item.parentItem() is None]
-            for item in self._items:
-                self._itemsOffset.append(item.pos().toPoint() - self.mousePressLoc)
+            self._itemsToMoveOffset = []
+            self._itemsToMove = []
+            itemsAtMousePressAll = self.items(self.mousePressLoc)
+
+            if self.editModes.moveItem:
+                # already in move mode (from move action)
+                self._itemsToMove = self.selectedItems()
+            elif len(itemsAtMousePressAll) > 0:
+                # only move if mouse was over item
+                for item in itemsAtMousePressAll:
+                    if item in self.selectedItems():
+                        self._itemsToMove = self.selectedItems()
+                        break
+                if len(self._itemsToMove) == 0:
+                    # item under mouse not selected, move item closest to cursor
+                    #TODO: might be a better system than closer to cursor (ex: use qt's hover system)
+                    self._itemsToMove = [sorted(itemsAtMousePressAll, key=lambda n: self._distItemCenterCursor(n, self.mousePressLoc))[0]]
+
+            for item in self._itemsToMove:
+                self._itemsToMoveOffset.append(item.pos().toPoint() - self.mousePressLoc)
 
             if self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
                 self.messageLine.setText('Pan View at mouse press position')
 
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self.mouseMoveLoc = event.scenePos().toPoint()
+        if event.buttons() == Qt.LeftButton:          
+            if len(self._itemsToMove) > 0:
+                if not self.editModes.moveItem:
+                    self.editModes.setMode("moveItem")
+
+                index = 0
+                for item in self._itemsToMove:  
+                    item.setPos(self.mouseMoveLoc + self._itemsToMoveOffset[index])
+                    index+=1
+            elif self.editModes.selectItem:
+                if self.mouseNotReleased and not self.selectionRectItem:
+                    self.editorWindow.messageLine.setText("Draw Selection Rectangle")
+                    self.selectionRectItem = QGraphicsRectItem(
+                        QRectF(self.mousePressLoc, self.mousePressLoc)
+                    )
+                    self.selectionRectItem.setPen(schlyr.draftPen)
+
+                    self.addItem(self.selectionRectItem)
+                elif self.mouseNotReleased and self.selectionRectItem:
+                    tl = QPoint( min(self.mouseMoveLoc.x(), self.mousePressLoc.x()), \
+                        min(self.mouseMoveLoc.y(), self.mousePressLoc.y()) )
+                    br = QPoint( max(self.mouseMoveLoc.x(), self.mousePressLoc.x()), \
+                        max(self.mouseMoveLoc.y(), self.mousePressLoc.y()) )
+                    self.selectionRectItem.setRect(
+                        # QRectF(self.mousePressLoc, self.mouseMoveLoc)
+                        QRectF(tl, br)
+                    )
+
     def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
-        if event.button() == Qt.LeftButton:
-            self.mouseReleaseLoc = event.scenePos().toPoint()
-            # TODO: the under condition is to avoid to move a placed net when the click is released after the cursor
-            # has moved. This condition should be added for other action (like drawPath). Maybe there is a better solution
-            if self.editorType == "sch":
-                if self.editModes.drawWire == True:
-                    return None
-            
-            if self._items:
+        self.mouseReleaseLoc = event.scenePos().toPoint()
+        self.mouseNotReleased = False
+        modifiers = QGuiApplication.keyboardModifiers()
+
+        if event.button() == Qt.LeftButton:           
+            if self.editModes.moveItem and len(self._itemsToMove) > 0:
                 if self.mouseReleaseLoc != self.mousePressLoc:
-                    self.moveShapesUndoStack(self._items, self._itemsOffset, self.mousePressLoc, self.mouseReleaseLoc)
+                    self.moveShapesUndoStack(self._itemsToMove, self._itemsToMoveOffset, self.mousePressLoc, self.mouseReleaseLoc)
+                self._itemsToMoveOffset = []
+                self._itemsToMove = []
+                self.editModes.setMode("selectItem")
+            elif self.editModes.selectItem and self.mousePressLoc == self.mouseReleaseLoc:
+                self.selectSceneItems(modifiers)
+            elif self.editModes.selectItem and self.selectionRectItem:
+                self.selectInRectItems(
+                    self.selectionRectItem.rect(), modifiers, self.partialSelection
+                )
+                self.removeItem(self.selectionRectItem)
+                self.selectionRectItem = None
 
     def snapToBase(self, number, base):
         """
@@ -228,28 +285,6 @@ class editorScene(QGraphicsScene):
     def copySelectedItems(self):
         pass
 
-    # def selectSceneItems(self, modifiers):
-    #     """
-    #     Selects scene items based on the given modifiers.
-    #     A selection rectangle is drawn if ShiftModifier is pressed,
-    #     else a single item is selected. The function does not return anything.
-
-    #     :param modifiers: The keyboard modifiers that determine the selection type.
-    #     :type modifiers: Qt.KeyboardModifiers
-    #     """
-    #     if modifiers == Qt.ShiftModifier:
-    #         self.editorWindow.messageLine.setText("Draw Selection Rectangle")
-    #         self.selectionRectItem = QGraphicsRectItem(
-    #             QRectF(self.mousePressLoc, self.mousePressLoc)
-    #         )
-    #         self.selectionRectItem.setPen(schlyr.draftPen)
-
-    #         self.undoStack.push(us.addShapeUndo(self, self.selectionRectItem))
-    #         # self.addItem(self.selectionRectItem)
-    #     self.editorWindow.messageLine.setText(
-    #         "Item selected" if self.selectedItems() else "Nothing selected"
-    #     )
-
     def selectSceneItems(self, modifiers):
         """
         Selects scene items based on the given modifiers.
@@ -259,31 +294,74 @@ class editorScene(QGraphicsScene):
         :param modifiers: The keyboard modifiers that determine the selection type.
         :type modifiers: Qt.KeyboardModifiers
         """
-        if modifiers == Qt.ShiftModifier:
-            self.editorWindow.messageLine.setText("Draw Selection Rectangle")
-            self.selectionRectItem = QGraphicsRectItem(
-                QRectF(self.mousePressLoc, self.mousePressLoc)
-            )
-            self.selectionRectItem.setPen(schlyr.draftPen)
-            self.undoStack.push(us.addShapeUndo(self, self.selectionRectItem))
-            # self.addItem(self.selectionRectItem)
-        else:
+        if self.editModes.selectItem:
             self.editorWindow.messageLine.setText("Select an item")
-            itemsAtMousePress = self.items(self.mousePressLoc)
+            # get under mouse items
+            itemsAtMousePressAll = self.items(self.mousePressLoc)
+            if len(itemsAtMousePressAll) < 1:
+                # no item selected, clearing
+                if modifiers != Qt.ShiftModifier and modifiers != Qt.ControlModifier:
+                    self._lastSelects = []
+                    self.clearSelection()
+                return None
+
+            # get top items
+            itemsAtMousePress = [item for item in itemsAtMousePressAll if item.parentItem() is None]
+            itemsAtMousePress = sorted(itemsAtMousePress, key=lambda n: self._distItemCenterCursor(n, self.mouseMoveLoc))
+            # compare last item press
+            if itemsAtMousePress != self._lastSelects:
+                self._lastSelects = itemsAtMousePress
+
+            # choose next item
+            itemToSelect = None
+            selectNext = False
+            for item in self._lastSelects:
+                if item.isSelected():
+                    if modifiers == Qt.ControlModifier:
+                        itemToSelect = item
+                        break
+                    else:
+                        selectNext = True
+                elif selectNext:
+                    itemToSelect = item
+                    break
+            
+            # clear selection
+            if modifiers != Qt.ShiftModifier and modifiers != Qt.ControlModifier:
+                self.clearSelection()
+
+            # select item
             if itemsAtMousePress:
-                [item.setSelected(True) for item in itemsAtMousePress]
+                if modifiers == Qt.ControlModifier:
+                    if itemToSelect:
+                        itemToSelect.setSelected(False)
+                else:
+                    if itemToSelect:
+                        itemToSelect.setSelected(True)
+                    else:
+                        # selected item was last, selecting first
+                        self._lastSelects[0].setSelected(True)
 
-        self.editorWindow.messageLine.setText(
-            "Item selected" if self.selectedItems() else "Nothing selected"
-        )
-
-    def selectInRectItems(self, selectionRect: QRect, partialSelection=False):
+            self.editorWindow.messageLine.setText(
+                "Item selected" if self.selectedItems() else "Nothing selected"
+            )
+    
+    def _distItemCenterCursor(self, item, point):
+        center = item.pos()
+        return math.sqrt(pow(center.x() - point.x(), 2) + pow(center.y() - point.y(), 2))
+        
+    def selectInRectItems(self, selectionRect: QRect, modifiers, partialSelection=False):
         """
         Select items in the scene.
         """
+        if(modifiers != Qt.ShiftModifier and modifiers != Qt.ControlModifier):
+            self.clearSelection()
+            setSelectState = True
+        else:
+            setSelectState = True if (modifiers == Qt.ShiftModifier) else False # False -> Ctrl pressed
 
         mode = Qt.IntersectsItemShape if partialSelection else Qt.ContainsItemShape
-        [item.setSelected(True) for item in self.items(selectionRect, mode=mode)]
+        [item.setSelected(setSelectState) for item in self.items(selectionRect, mode=mode)]
 
     def selectAll(self):
         """
@@ -313,6 +391,23 @@ class editorScene(QGraphicsScene):
                         item.stretch = True
             except AttributeError:
                 self.messageLine.setText("Nothing selected")
+
+    def moveBySelectedItems(self):
+        if self.selectedItems():
+            dlg = pdlg.moveByDialogue(self.editorWindow)
+            dlg.xEdit.setText("0.0")
+            dlg.yEdit.setText("0.0")
+            factor = fabproc.dbu if(self.editorType == "lay") else 1.0
+            if dlg.exec() == QDialog.Accepted:
+                for item in self.selectedItems():
+                    item.moveBy(
+                        self.snapToBase(float(dlg.xEdit.text()) * factor, self.snapTuple[0]),
+                        self.snapToBase(float(dlg.yEdit.text()) * factor, self.snapTuple[1]),
+                    )
+                self.editorWindow.messageLine.setText(
+                    f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}"
+                )
+                self.editModes.setMode("selectItem")
 
     def fitItemsInView(self) -> None:
         # TODO: itemsBoundingRect() processes all the items in the view, it might be very slow if the number of item is
@@ -468,8 +563,6 @@ class symbolScene(editorScene):
                 if self.editModes.changeOrigin:  # change origin of the symbol
                     self.origin = self.mousePressLoc
                     self.editModes.changeOrigin = False
-                if self.editModes.selectItem:
-                    self.selectSceneItems(modifiers)
                 if self.editModes.drawPin:
                     self.editorWindow.messageLine.setText("Add Symbol Pin")
                     self.newPin = self.pinDraw(self.mousePressLoc)
@@ -529,7 +622,6 @@ class symbolScene(editorScene):
 
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(mouse_event)
-        self.mouseMoveLoc = mouse_event.scenePos().toPoint()
         modifiers = QGuiApplication.keyboardModifiers()
         if mouse_event.buttons() == Qt.LeftButton:
             if self.editModes.drawPin and self.newPin.isSelected():
@@ -549,10 +641,6 @@ class symbolScene(editorScene):
             elif self.editModes.drawArc:
                 self.editorWindow.messageLine.setText("Extend Arc")
                 self.newArc.end = self.mouseMoveLoc
-            elif self.editModes.selectItem and modifiers == Qt.ShiftModifier:
-                self.selectionRectItem.setRect(
-                    QRectF(self.mousePressLoc, self.mouseMoveLoc)
-                )
         else:
             if (
                 self.editModes.drawPolygon
@@ -572,7 +660,6 @@ class symbolScene(editorScene):
     def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(mouse_event)
         try:
-            self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
             modifiers = QGuiApplication.keyboardModifiers()
             if mouse_event.button() == Qt.LeftButton:
                 if self.editModes.drawLine:
@@ -593,12 +680,6 @@ class symbolScene(editorScene):
                 elif self.editModes.addLabel:
                     self.newLabel.setSelected(False)
                     self.editModes.addLabel = False
-                elif self.editModes.selectItem and modifiers == Qt.ShiftModifier:
-                    self.selectInRectItems(
-                        self.selectionRectItem.rect(), self.partialSelection
-                    )
-                    self.removeItem(self.selectionRectItem)
-                    self.selectionRectItem = None
         except Exception as e:
             self.logger.error(f"Error in Mouse Press Event: {e} ")
 
@@ -723,22 +804,6 @@ class symbolScene(editorScene):
                     item.pos().y() + 4 * self.snapTuple[1],
                 )
             )
-
-    def moveBySelectedItems(self):
-        if self.selectedItems():
-            dlg = pdlg.moveByDialogue(self.editorWindow)
-            dlg.xEdit.setText("0")
-            dlg.yEdit.setText("0")
-            if dlg.exec() == QDialog.Accepted:
-                for item in self.selectedItems():
-                    item.moveBy(
-                        self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0]),
-                        self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1]),
-                    )
-            self.editorWindow.messageLine.setText(
-                f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}"
-            )
-            self.editModes.setMode("selectItem")
 
     def itemProperties(self):
         """
@@ -1209,13 +1274,7 @@ class schematicScene(editorScene):
         super().mousePressEvent(mouse_event)
         try:
             modifiers = QGuiApplication.keyboardModifiers()
-            self.viewRect = self.parent.view.mapToScene(
-                self.parent.view.viewport().rect()
-            ).boundingRect()
-
             if mouse_event.button() == Qt.LeftButton:
-                self.mousePressLoc = mouse_event.scenePos().toPoint()
-
                 if self.editModes.addInstance:
                     self.newInstance = self.drawInstance(self.mousePressLoc)
                     self.newInstance.setSelected(True)
@@ -1254,15 +1313,12 @@ class schematicScene(editorScene):
                     self.editorWindow.messageLine.setText("Rotate item")
                     if self.selectedItems():
                         self.rotateSelectedItems(self.mousePressLoc)
-                elif self.editModes.selectItem:
-                    self.selectSceneItems(modifiers)
 
         except Exception as e:
             self.logger.error(f"mouse press error: {e}")
 
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(mouse_event)
-        self.mouseMoveLoc = mouse_event.scenePos().toPoint()
         modifiers = QGuiApplication.keyboardModifiers()
         try:
             if mouse_event.buttons() == Qt.LeftButton:
@@ -1275,10 +1331,6 @@ class schematicScene(editorScene):
 
                 elif self.editModes.drawText and self.newText.isSelected():
                     self.newText.setPos(self.mouseMoveLoc - self.mousePressLoc)
-                elif self.editModes.selectItem and modifiers == Qt.ShiftModifier:
-                    self.selectionRectItem.setRect(
-                        QRectF(self.mousePressLoc, self.mouseMoveLoc)
-                    )
             else:
                 if self.editModes.drawWire and self._newNet is not None:
                     self.mouseMoveLoc = self.findSnapPoint(
@@ -1306,8 +1358,8 @@ class schematicScene(editorScene):
             self.logger.error(f"mouse move error: {e}")
 
     def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseReleaseEvent(mouse_event)
         try:
-            self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
             modifiers = QGuiApplication.keyboardModifiers()
             if mouse_event.button() == Qt.LeftButton:
                 if self.editModes.addInstance:
@@ -1315,18 +1367,10 @@ class schematicScene(editorScene):
                 elif self.editModes.drawPin:
                     self.editModes.drawPin = False
                     self.newPin = None
-                elif self.editModes.selectItem:
-                    if modifiers == Qt.ShiftModifier:
-                        self.selectInRectItems(
-                            self.selectionRectItem.rect(), self.partialSelection
-                        )
-                        self.removeItem(self.selectionRectItem)
-                        self.selectionRectItem = None
                 # elif self.editModes.stretchItem and self._stretchNet:
                 #     self._stretchNet = None
         except Exception as e:
             self.logger.error(f"mouse release error: {e}")
-        super().mouseReleaseEvent(mouse_event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:
@@ -1363,7 +1407,6 @@ class schematicScene(editorScene):
             splitPointsList.append(self._totalNet.endPoints[1])
             orderedPointsObj = map(self._totalNet.mapToScene,list(Counter(self.orderPoints(splitPointsList)).keys()))
             orderedPoints = [opoint.toPoint() for opoint in orderedPointsObj]
-            # print(f'ordered points: {orderedPoints}')
             splitNetList = []
             for i in range(len(orderedPoints) - 1):
                 splitNet = net.schematicNet(orderedPoints[i], orderedPoints[i + 1])
@@ -1975,6 +2018,8 @@ class schematicScene(editorScene):
                         shape.instanceName = f"I{self.instanceCounter}"
                         shape.counter = int(self.instanceCounter)
                         [label.labelDefs() for label in shape.labels.values()]
+        self.editModes.setMode("selectItem") # TODO: might be a better way to switch back automatically to edit mode rather
+                                            # than put it everywhere ?
 
     def saveSchematic(self, file: pathlib.Path):
         """
@@ -2017,7 +2062,6 @@ class schematicScene(editorScene):
         if index == -1:
             return str(type(editorWindow))
         else:
-            # print(str(type(editorWindow))[index + 1 : -2])
             return str(type(editorWindow))[index + 1 : -2]
 
     def loadSchematicItems(self, itemsList: list[dict]) -> None:
@@ -2269,45 +2313,34 @@ class schematicScene(editorScene):
         else:
             self.logger.warning("No symbol selected")
 
-    def moveBySelectedItems(self):
-        if self.selectedItems():
-            dlg = pdlg.moveByDialogue(self.editorWindow)
-            dlg.xEdit.setText("0")
-            dlg.yEdit.setText("0")
-            if dlg.exec() == QDialog.Accepted:
-                for item in self.selectedItems():
-                    item.moveBy(
-                        self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0]),
-                        self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1]),
-                    )
-                self.editorWindow.messageLine.setText(
-                    f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}"
-                )
-                self.editModes.setMode("selectItem")
-
-    def selectInRectItems(self, selectionRect: QRect, partialSelection=False):
+    def selectInRectItems(self, selectionRect: QRect, modifiers, partialSelection=False):
         """
         Select items in the scene.
         """
+        if(modifiers != Qt.ShiftModifier and modifiers != Qt.ControlModifier):
+            self.clearSelection()
+            setSelectState = True
+        else:
+            setSelectState = True if (modifiers == Qt.ShiftModifier) else False # False -> Ctrl pressed
 
         mode = Qt.IntersectsItemShape if partialSelection else Qt.ContainsItemShape
         if self.selectModes.selectAll:
-            [item.setSelected(True) for item in self.items(selectionRect, mode=mode)]
+            [item.setSelected(setSelectState) for item in self.items(selectionRect, mode=mode)]
         elif self.selectModes.selectDevice:
             [
-                item.setSelected(True)
+                item.setSelected(setSelectState)
                 for item in self.items(selectionRect, mode=mode)
                 if isinstance(item, shp.schematicSymbol)
             ]
         elif self.selectModes.selectNet:
             [
-                item.setSelected(True)
+                item.setSelected(setSelectState)
                 for item in self.items(selectionRect, mode=mode)
                 if isinstance(item, net.schematicNet)
             ]
         elif self.selectModes.selectPin:
             [
-                item.setSelected(True)
+                item.setSelected(setSelectState)
                 for item in self.items(selectionRect, mode=mode)
                 if isinstance(item, shp.schematicPin)
             ]
@@ -2559,9 +2592,6 @@ class layoutScene(editorScene):
                     self.arrayViaTuple = None
                     self._arrayVia = None
                     self.editModes.setMode("selectItem")
-                elif self.editModes.selectItem:
-                    # Select scene items
-                    self.selectSceneItems(modifiers)
                 elif self.editModes.rotateItem:
                     self.editorWindow.messageLine.setText("Rotate item")
                     if self.selectedItems():
@@ -2583,19 +2613,11 @@ class layoutScene(editorScene):
         Returns:
             None
         """
-        # Get the current mouse position
-        self.mouseMoveLoc = mouse_event.scenePos().toPoint()
         # Call the parent class's mouseMoveEvent method
         super().mouseMoveEvent(mouse_event)
         # Get the keyboard modifiers
         modifiers = QGuiApplication.keyboardModifiers()
-        if mouse_event.buttons() == Qt.LeftButton:
-            # Handle selecting item mode with shift modifier
-            if self.editModes.selectItem and modifiers == Qt.ShiftModifier:
-                self.selectionRectItem.setRect(
-                    QRectF(self.mousePressLoc, self.mouseMoveLoc)
-                )
-        else:
+        if mouse_event.buttons() != Qt.LeftButton:
             if self.editModes.drawRect and self._newRect:
                 if self._newRect.scene() is None:
                     self.addUndoStack(self._newRect)
@@ -2696,7 +2718,6 @@ class layoutScene(editorScene):
 
     def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(mouse_event)
-        self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
         modifiers = QGuiApplication.keyboardModifiers()
         try:
             if mouse_event.button() == Qt.LeftButton:
@@ -2734,12 +2755,6 @@ class layoutScene(editorScene):
                     self.newInstance = None
                     self.layoutInstanceTuple = None
                     self.editModes.setMode("selectItem")
-                elif self.editModes.selectItem and modifiers == Qt.ShiftModifier:
-                    self.selectInRectItems(
-                        self.selectionRectItem.rect(), self.partialSelection
-                    )
-                    self.removeItem(self.selectionRectItem)
-                    self.selectionRectItem = None
 
         except Exception as e:
             self.logger.error(f"mouse release error: {e}")
@@ -2873,7 +2888,6 @@ class layoutScene(editorScene):
             starttime = time.time()
             self.createLayoutItems(decodedData[2:])
             endtime = time.time()
-            # print(f"load time: {endtime-starttime}")
         except Exception as e:
             self.logger.error(f"Cannot load layout: {e}")
 
@@ -3264,26 +3278,6 @@ class layoutScene(editorScene):
                     item.pos().y() + 4 * self.snapTuple[1],
                 )
             )
-
-    def moveBySelectedItems(self):
-        if self.selectedItems():
-            dlg = pdlg.moveByDialogue(self.editorWindow)
-            dlg.xEdit.setText("0.0")
-            dlg.yEdit.setText("0.0")
-            if dlg.exec() == QDialog.Accepted:
-                for item in self.selectedItems():
-                    item.moveBy(
-                        self.snapToBase(
-                            float(dlg.xEdit.text()) * fabproc.dbu, self.snapTuple[0]
-                        ),
-                        self.snapToBase(
-                            float(dlg.yEdit.text()) * fabproc.dbu, self.snapTuple[1]
-                        ),
-                    )
-                self.editorWindow.messageLine.setText(
-                    f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}"
-                )
-                self.editModes.setMode("selectItem")
 
     def deleteAllRulers(self):
         for ruler in self.rulersSet:

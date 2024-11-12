@@ -498,6 +498,7 @@ class editorWindow(QMainWindow):
         self.copyAction.triggered.connect(self.copyClick)
         self.undoAction.triggered.connect(self.undoClick)
         self.redoAction.triggered.connect(self.redoClick)
+        self.moveAction.triggered.connect(self.moveClick)
         self.moveByAction.triggered.connect(self.moveByClick)
         self.rotateAction.triggered.connect(self.rotateItemClick)
         self.goUpAction.triggered.connect(self.goUpHierarchy)
@@ -509,6 +510,7 @@ class editorWindow(QMainWindow):
         self.centralW.scene.undoStack.canRedoChanged.connect(self.redoStackChanged)
 
     def _createShortcuts(self):
+        self.saveCellAction.setShortcut("Ctrl+S")
         self.redoAction.setShortcut("Shift+U")
         self.undoAction.setShortcut(Qt.Key_U)
         self.objPropAction.setShortcut(Qt.Key_Q)
@@ -519,10 +521,11 @@ class editorWindow(QMainWindow):
         self.deleteAction.setShortcut(QKeySequence.Delete)
         self.selectAllAction.setShortcut("Ctrl+A")
         self.stretchAction.setShortcut(Qt.Key_S)
+        self.moveAction.setShortcut(Qt.Key_M)
 
     def _editorContextMenu(self):
         self.centralW.scene.itemContextMenu.addAction(self.copyAction)
-        self.centralW.scene.itemContextMenu.addAction(self.moveByAction)
+        self.centralW.scene.itemContextMenu.addAction(self.moveAction)
         self.centralW.scene.itemContextMenu.addAction(self.rotateAction)
         self.centralW.scene.itemContextMenu.addAction(self.deleteAction)
         self.centralW.scene.itemContextMenu.addAction(self.objPropAction)

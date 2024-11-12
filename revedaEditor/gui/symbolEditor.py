@@ -177,9 +177,9 @@ class symbolEditor(edw.editorWindow):
         with open(self.file) as tempFile:
             try:
                 items = json.load(tempFile)
+                self.centralW.scene.loadSymbol(items)
             except json.decoder.JSONDecodeError:
                 self.logger.error("Cannot load symbol. JSON Decode Error")
-        self.centralW.scene.loadSymbol(items)
 
     def createLabelClick(self):
         createLabelDlg = pdlg.createSymbolLabelDialog(self)
