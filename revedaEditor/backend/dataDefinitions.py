@@ -79,6 +79,7 @@ class editModes:
 class symbolModes(editModes):
     drawPin: bool
     drawArc: bool
+    drawFreeArc: bool
     drawRect: bool
     drawLine: bool
     addLabel: bool

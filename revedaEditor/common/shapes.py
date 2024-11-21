@@ -118,11 +118,10 @@ class symbolShape(QGraphicsItem):
         self._offset = value
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mousePressEvent(event)
         self.setSelected(True)
         if self.scene().editModes.moveItem:
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
-
-        super().mousePressEvent(event)
 
     def sceneEvent(self, event):
         """
@@ -1458,6 +1457,7 @@ class schematicSymbol(symbolShape):
                             pinNetIndexTuple(pinItem, netItem, endIndex))
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mousePressEvent(event)
         # Check if the click is on any of the pins
         for pin in self._pins.values():
             if pin.contains(self.mapToItem(pin, event.pos())):
@@ -1468,7 +1468,6 @@ class schematicSymbol(symbolShape):
                 return  # Stop processing after handling pin click
         self._snapLines = None
         # If not on a pin, handle as normal
-        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)

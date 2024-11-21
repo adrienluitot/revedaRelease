@@ -49,6 +49,7 @@ from quantiphy import Quantity
 
 if os.environ.get("REVEDA_PDK_PATH"):
     import pdk.process as fabproc
+    import pdk.layoutLayers as laylyr
 else:
     import defaultPDK.process as fabproc
 import revedaEditor.backend.dataDefinitions as ddef

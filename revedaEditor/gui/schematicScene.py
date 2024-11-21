@@ -22,11 +22,10 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-# from hashlib import new
+
 import itertools as itt
 import json
 import time
-
 # from hashlib import new
 import pathlib
 from collections import Counter
@@ -102,13 +101,14 @@ class schematicScene(editorScene):
             addInstance=False,
             stretchItem=False,
         )
+        self.editorType = "sch"
         self.selectModes = ddef.schematicSelectModes(
             selectAll=True,
             selectDevice=False,
             selectNet=False,
             selectPin=False,
         )
-        self.instanceCounter = 0
+        self.itemCounter = 0
         self.netCounter = 0
         self.selectedNet = None
         self.selectedPin = None
@@ -116,8 +116,7 @@ class schematicScene(editorScene):
         self.selectedSymbolPin = None
         self.schematicNets: Dict[str, Set[net.schematicNet]] = (
             dict()
-        )  # netName: list of nets with
-        # the same name
+        )  # netName: list of nets with the same name
         self.instanceSymbolTuple = None
         # pin attribute defaults
         self.pinName = ""
@@ -126,6 +125,7 @@ class schematicScene(editorScene):
         # self.wires = None
         self._newNet = None
         self._stretchNet = None
+        # self._totalNet = None
         self._newInstance = None
         self._newPin = None
         self._newText = None
@@ -137,7 +137,7 @@ class schematicScene(editorScene):
         fixedFamily = [
             family for family in fontFamilies if QFontDatabase.isFixedPitch(family)
         ][0]
-        fontStyle = QFontDatabase.styles(fixedFamily)[1]
+        fontStyle = QFontDatabase.styles(fixedFamily)[0] #TODO: why it was [1] ? Proably a better way to ensure an existing font
         self.fixedFont = QFont(fixedFamily)
         self.fixedFont.setStyleName(fontStyle)
         fontSize = [size for size in QFontDatabase.pointSizes(fixedFamily, fontStyle)][
@@ -152,26 +152,25 @@ class schematicScene(editorScene):
             (self.editModes.drawPin, self.editModes.drawWire, self.editModes.drawText)
         )
 
-    def mousePressEvent(self, mouseEvent: QGraphicsSceneMouseEvent) -> None:
-        # self.selectionChangedHandler()
-        super().mousePressEvent(mouseEvent)
-        try:
-            self.mousePressLoc = mouseEvent.scenePos().toPoint()
-        except Exception as e:
-            self.logger.error(f"Mouse press error: {e}")
-
     def mouseReleaseEvent(self, mouseEvent: QGraphicsSceneMouseEvent) -> None:
         """
         Handle mouse release event.
 
         :param mouseEvent: QGraphicsSceneMouseEvent instance
         """
+        super().mouseReleaseEvent(mouseEvent)
         try:
-            self.mouseReleaseLoc = mouseEvent.scenePos().toPoint()
             self._handleMouseRelease(self.mouseReleaseLoc, mouseEvent.button())
         except Exception as e:
             self.logger.error(f"Mouse release error: {e}")
-        super().mouseReleaseEvent(mouseEvent)
+    
+    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
+        if event.button() == Qt.LeftButton:
+            if self._newNet is not None: # stop and save net drawing
+                self.removeSnapRect()
+                self.checkNewNet(self._newNet, True)
+                self._newNet = None
+        self.editModes.setMode("selectItem")
 
     def mouseMoveEvent(self, mouseEvent: QGraphicsSceneMouseEvent) -> None:
         """
@@ -180,7 +179,6 @@ class schematicScene(editorScene):
         :param mouseEvent: QGraphicsSceneMouseEvent instance
         """
         super().mouseMoveEvent(mouseEvent)
-        self.mouseMoveLoc = mouseEvent.scenePos().toPoint()
         self._handleMouseMove(self.mouseMoveLoc)
 
     def _handleMouseRelease(self, mouseReleaseLoc: QPoint, button: Qt.MouseButton) -> None:
@@ -201,6 +199,9 @@ class schematicScene(editorScene):
                 self._handleDrawText(mouseReleaseLoc)
             elif self.editModes.rotateItem:
                 self.rotateSelectedItems(mouseReleaseLoc)
+            elif self.editModes.changeOrigin:
+                self.origin = self.mousePressLoc
+                self.editModes.setMode("selectItem")
 
     def _handleMouseMove(self, mouseMoveLoc: QPoint) -> None:
         """
@@ -214,7 +215,7 @@ class schematicScene(editorScene):
             self._newPin.setPos(mouseMoveLoc - self._newPin.start)
         elif self._newNet and self.editModes.drawWire:
             if not self._newNet.scene():
-                self.addUndoStack(self._newNet)
+                self.addItem(self._newNet)
             self._newNet.draftLine = QLineF(
                 self._newNet.draftLine.p1(),
                 self.findSnapPoint(self.mouseMoveLoc, set()),
@@ -249,10 +250,12 @@ class schematicScene(editorScene):
         :param mouseReleaseLoc: QPoint instance
         """
         if self._newNet:  # finish net drawing
+            startPoint = self._newNet.sceneEndPoints[1]
             self.checkNewNet(self._newNet)
             self._newNet = None
-        mouseReleaseLoc = self.findSnapPoint(mouseReleaseLoc, set())
-        self._newNet = net.schematicNet(mouseReleaseLoc, mouseReleaseLoc)
+        else:
+            startPoint = self.findSnapPoint(mouseReleaseLoc, set())
+        self._newNet = net.schematicNet(startPoint, startPoint)
         self._newNet.nameStrength = net.netNameStrengthEnum.NONAME
 
     def _handleDrawText(self, mouseReleaseLoc: QPoint) -> None:
@@ -266,6 +269,7 @@ class schematicScene(editorScene):
             self.textTuple = None
         if self.textTuple:
             self._newText = shp.text(mouseReleaseLoc, *self.textTuple)
+            self.addItem(self._newText)
 
     def updateSnapPointRect(self):
         if self._snapPointRect is None:
@@ -280,15 +284,15 @@ class schematicScene(editorScene):
             self._stretchNet.draftLine.p1(), self.mouseMoveLoc
         )
 
-    def checkNewNet(self, newNet: net.schematicNet):
+    def checkNewNet(self, newNet: net.schematicNet, endNet=False):
         """
         check if the new net is valid. If it has zero length, remove it. Otherwise process it.
 
         """
-        if newNet.draftLine.isNull():
+        if endNet == False:
             self.removeItem(newNet)
-            self.undoStack.removeLastCommand()
-        else:
+        if not newNet.draftLine.isNull():
+            self.addUndoStack(newNet)
             self.mergeSplitNets(newNet)
 
     def mergeSplitNets(self, inputNet: net.schematicNet):
@@ -337,8 +341,9 @@ class schematicScene(editorScene):
                 netItem.nameStrength = self._totalNet.nameStrength.decrement()
             splitNetList[0].nameStrength = self._totalNet.nameStrength
 
-            self.addListUndoStack(splitNetList)
-            self.deleteUndoStack(self._totalNet)
+            for netItem in splitNetList:
+                self.addItem(netItem)
+            self.removeItem(self._totalNet)
 
     def mergeNets(self, inputNet: net.schematicNet) -> net.schematicNet:
         """
@@ -357,7 +362,6 @@ class schematicScene(editorScene):
             return origNet
 
         # Remove original net and add merged net
-
         self.removeItem(origNet)
         self.addItem(mergedNet)
 
@@ -409,7 +413,7 @@ class schematicScene(editorScene):
         return snapPoints
 
     def findNetStretchPoints(
-            self, netItem: net.schematicNet, snapDistance: int
+        self, netItem: net.schematicNet, snapDistance: int
     ) -> dict[int, QPoint]:
         netEndPointsDict: dict[int, QPoint] = {}
         sceneEndPoints = netItem.sceneEndPoints
@@ -471,7 +475,7 @@ class schematicScene(editorScene):
         )
         self.undoStack.push(addDeleteStretchNetCommand)
 
-        # Utility methods
+    # Utility methods
 
     @staticmethod
     def clearNetStatus(netsSet: set[net.schematicNet]):
@@ -862,7 +866,7 @@ class schematicScene(editorScene):
         Add an instance of a symbol to the scene.
         """
         instance = self.instSymbol(pos)
-        self.instanceCounter += 1
+        self.itemCounter += 1
         self.addUndoStack(instance)
         # self.instanceSymbolTuple = None
         return instance
@@ -885,7 +889,7 @@ class schematicScene(editorScene):
                 symbolInstance = shp.schematicSymbol(itemShapes, itemAttributes)
 
                 symbolInstance.setPos(pos)
-                symbolInstance.counter = self.instanceCounter
+                symbolInstance.counter = self.itemCounter
                 symbolInstance.instanceName = f"I{symbolInstance.counter}"
                 symbolInstance.libraryName = (
                     self.instanceSymbolTuple.libraryItem.libraryName
@@ -898,32 +902,17 @@ class schematicScene(editorScene):
                 return symbolInstance
         except Exception as e:
             self.logger.warning(f"instantiation error: {e}")
-
-    def copySelectedItems(self):
-        selectedItems = [
-            item for item in self.selectedItems() if item.parentItem() is None
-        ]
-        if selectedItems is not None:
-            for item in selectedItems:
-                selectedItemJson = json.dumps(item, cls=schenc.schematicEncoder)
-                itemCopyDict = json.loads(selectedItemJson)
-                shape = lj.schematicItems(self).create(itemCopyDict)
-                if shape is not None:
-                    item.setSelected(False)
-                    self.addUndoStack(shape)
-                    shape.setSelected(True)
-                    # shift position by four grid units to right and down
-                    shape.setPos(
-                        QPoint(
-                            item.pos().x() + 4 * self.snapTuple[0],
-                            item.pos().y() + 4 * self.snapTuple[1],
-                        )
-                    )
-                    if isinstance(shape, shp.schematicSymbol):
-                        self.instanceCounter += 1
-                        shape.instanceName = f"I{self.instanceCounter}"
-                        shape.counter = int(self.instanceCounter)
-                        [label.labelDefs() for label in shape.labels.values()]
+    
+    def _getItemShape(self, item):
+        selectedItemJson = json.dumps(item, cls=schenc.schematicEncoder)
+        itemCopyDict = json.loads(selectedItemJson)
+        shape =  lj.schematicItems(self).create(itemCopyDict)
+        if isinstance(shape, shp.schematicSymbol):
+            self.itemCounter += 1
+            shape.instanceName = f"I{self.itemCounter}"
+            shape.counter = int(self.itemCounter)
+            [label.labelDefs() for label in shape.labels.values()]
+        return shape
 
     def saveSchematic(self, file: pathlib.Path):
         """
@@ -998,11 +987,11 @@ class schematicScene(editorScene):
             itemShape = lj.schematicItems(self).create(itemDict)
             if (
                     isinstance(itemShape, shp.schematicSymbol)
-                    and itemShape.counter > self.instanceCounter
+                    and itemShape.counter > self.itemCounter
             ):
-                self.instanceCounter = itemShape.counter
+                self.itemCounter = itemShape.counter
                 # increment item counter for next symbol
-                self.instanceCounter += 1
+                self.itemCounter += 1
             shapesList.append(itemShape)
         # self.undoStack.push(us.loadShapesUndo(self, shapesList))
         for itemShape in shapesList:
@@ -1270,41 +1259,14 @@ class schematicScene(editorScene):
         else:
             self.logger.warning("No symbol selected")
 
-    def selectInRectItems(self, selectionRect: QRect, partialSelection=False):
-        """
-        Select items in the scene.
-        """
-
-        mode = Qt.IntersectsItemShape if partialSelection else Qt.ContainsItemShape
-        if self.selectModes.selectAll:
-            [item.setSelected(True) for item in self.items(selectionRect, mode=mode)]
-        elif self.selectModes.selectDevice:
-            [
-                item.setSelected(True)
-                for item in self.items(selectionRect, mode=mode)
-                if isinstance(item, shp.schematicSymbol)
-            ]
-        elif self.selectModes.selectNet:
-            [
-                item.setSelected(True)
-                for item in self.items(selectionRect, mode=mode)
-                if isinstance(item, net.schematicNet)
-            ]
-        elif self.selectModes.selectPin:
-            [
-                item.setSelected(True)
-                for item in self.items(selectionRect, mode=mode)
-                if isinstance(item, shp.schematicPin)
-            ]
-
     def renumberInstances(self):
         symbolList = [
             item for item in self.items() if isinstance(item, shp.schematicSymbol)
         ]
-        self.instanceCounter = 0
+        self.itemCounter = 0
         for symbolInstance in symbolList:
-            symbolInstance.counter = self.instanceCounter
+            symbolInstance.counter = self.itemCounter
             if symbolInstance.instanceName.startswith("I"):
                 symbolInstance.instanceName = f"I{symbolInstance.counter}"
-                self.instanceCounter += 1
+                self.itemCounter += 1
         self.reloadScene()

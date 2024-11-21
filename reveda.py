@@ -33,13 +33,16 @@ import os
 import platform
 import sys
 from PySide6.QtWidgets import QApplication
+from dotenv import load_dotenv
+from pathlib import Path
 
+load_dotenv()
+if os.environ.get("REVEDA_PDK_PATH", None):
+    sys.path.append(os.environ.get("REVEDA_PDK_PATH"))
 
 import revedaEditor.gui.revedaMain as rvm
 import revedaEditor.gui.pythonConsole as pcon
 from contextlib import redirect_stdout, redirect_stderr
-from dotenv import load_dotenv
-from pathlib import Path
 
 import cProfile
 import pstats
@@ -60,7 +63,7 @@ class revedaApp(QApplication):
         # Load environment variables
         self.revedaeditor_pathObj = None
         self.revedasim_pathObj = None
-        load_dotenv()
+        # load_dotenv()
         reveda_runpathObj = Path(__file__).resolve().parent
         self.revedaeditor_path = None
         self.revedasim_path = None
@@ -84,13 +87,13 @@ class revedaApp(QApplication):
             else:
                 self.revedasim_pathObj = reveda_runpathObj.joinpath(self.revedasim_path)
             sys.path.append(str(self.revedasim_pathObj))
-        self.reveda_pdk_path = os.environ.get("REVEDA_PDK_PATH", None)
-        if self.reveda_pdk_path:
-            if Path(self.reveda_pdk_path).is_absolute():
-                self.reveda_pdk_pathObj = Path(self.reveda_pdk_path)
-            else:
-                self.reveda_pdk_pathObj = reveda_runpathObj.joinpath(self.reveda_pdk_path)
-            sys.path.append(str(self.reveda_pdk_pathObj))
+        # self.reveda_pdk_path = os.environ.get("REVEDA_PDK_PATH", None)
+        # if self.reveda_pdk_path:
+        #     if Path(self.reveda_pdk_path).is_absolute():
+        #         self.reveda_pdk_pathObj = Path(self.reveda_pdk_path)
+        #     else:
+        #         self.reveda_pdk_pathObj = reveda_runpathObj.joinpath(self.reveda_pdk_path)
+        #     sys.path.append(str(self.reveda_pdk_pathObj))
 
 
 def main():

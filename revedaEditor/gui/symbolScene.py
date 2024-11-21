@@ -23,10 +23,8 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-# from hashlib import new
 import json
 import os
-
 # from hashlib import new
 import pathlib
 from copy import deepcopy
@@ -85,6 +83,7 @@ class symbolScene(editorScene):
             panView=False,
             drawPin=False,
             drawArc=False,
+            drawFreeArc=False,
             drawRect=False,
             drawLine=False,
             addLabel=False,
@@ -92,8 +91,9 @@ class symbolScene(editorScene):
             drawPolygon=False,
             stretchItem=False,
         )
+        self.editorType = "sym"
 
-        self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
+        self.symbolShapes = ["line", "arc", "freearc", "rect", "circle", "pin", "label", "polygon"]
 
         self.origin = QPoint(0, 0)
         # some default attributes
@@ -122,6 +122,7 @@ class symbolScene(editorScene):
             (
                 self.editModes.drawPin,
                 self.editModes.drawArc,
+                self.editModes.drawFreeArc, # TODO: graphical implementation
                 self.editModes.drawLine,
                 self.editModes.drawRect,
                 self.editModes.drawCircle,
@@ -132,9 +133,6 @@ class symbolScene(editorScene):
     def mousePressEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(mouse_event)
         try:
-            self.viewRect = self.parent.view.mapToScene(
-                self.parent.view.viewport().rect()
-            ).boundingRect()
             if mouse_event.button() == Qt.LeftButton:
                 self.mousePressLoc = self.snapToGrid(
                     mouse_event.scenePos().toPoint(), self.snapTuple
@@ -203,7 +201,6 @@ class symbolScene(editorScene):
 
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(mouse_event)
-        self.mouseMoveLoc = mouse_event.scenePos().toPoint()
         modifiers = QGuiApplication.keyboardModifiers()
         if mouse_event.buttons() == Qt.LeftButton:
             if self.editModes.drawPin and self.newPin.isSelected():
@@ -216,22 +213,18 @@ class symbolScene(editorScene):
             elif self.editModes.drawCircle:
                 self.editorWindow.messageLine.setText("Extend Circle")
                 radius = (
-                                 (self.mouseMoveLoc.x() - self.mousePressLoc.x()) ** 2
-                                 + (self.mouseMoveLoc.y() - self.mousePressLoc.y()) ** 2
-                         ) ** 0.5
+                    (self.mouseMoveLoc.x() - self.mousePressLoc.x()) ** 2
+                    + (self.mouseMoveLoc.y() - self.mousePressLoc.y()) ** 2
+                ) ** 0.5
                 self.newCircle.radius = radius
             elif self.editModes.drawArc:
                 self.editorWindow.messageLine.setText("Extend Arc")
                 self.newArc.end = self.mouseMoveLoc
-            elif self.editModes.selectItem and modifiers == Qt.ShiftModifier:
-                self._selectionRectItem.setRect(
-                    QRectF(self.mousePressLoc, self.mouseMoveLoc)
-                )
         else:
             if (
-                    self.editModes.drawPolygon
-                    and self.newPolygon is not None
-                    and self.polygonGuideLine
+                self.editModes.drawPolygon
+                and self.newPolygon is not None
+                and self.polygonGuideLine
             ):
                 self.polygonGuideLine.setLine(
                     QLineF(self.newPolygon.points[-1], self.mouseMoveLoc)
@@ -246,14 +239,11 @@ class symbolScene(editorScene):
     def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(mouse_event)
         try:
-            self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
-            modifiers = QGuiApplication.keyboardModifiers()
             if mouse_event.button() == Qt.LeftButton:
                 if self.editModes.drawLine:
                     self.editorWindow.messageLine.setText("Drawing a Line")
                     self.newLine = self.lineDraw(self.mousePressLoc, self.mousePressLoc)
                     self.newLine.setSelected(True)
-
                 elif self.editModes.drawCircle:
                     self.newCircle.setSelected(False)
                     self.newCircle.update()
@@ -321,6 +311,15 @@ class symbolScene(editorScene):
         self.undoStack.push(undoCommand)
         return arc
 
+    def freeArcDraw(self, center: QPoint, radius: int, startAngle: float, angleSpan: float):
+        """
+        Draws an arc inside the rectangle defined by center, radius, start angle and span angle.
+        """
+        freeArc = shp.symbolFreeArc(center, radius, startAngle, angleSpan)
+        undoCommand = us.addShapeUndo(self, freeArc)
+        self.undoStack.push(undoCommand)
+        return freeArc
+
     def pinDraw(self, current):
         pin = shp.symbolPin(current, self.pinName, self.pinDir, self.pinType)
         # self.addItem(pin)
@@ -329,14 +328,14 @@ class symbolScene(editorScene):
         return pin
 
     def labelDraw(
-            self,
-            current,
-            labelDefinition,
-            labelType,
-            labelHeight,
-            labelAlignment,
-            labelOrient,
-            labelUse,
+        self,
+        current,
+        labelDefinition,
+        labelType,
+        labelHeight,
+        labelAlignment,
+        labelOrient,
+        labelUse,
     ):
         label = lbl.symbolLabel(
             current,
@@ -354,50 +353,10 @@ class symbolScene(editorScene):
         self.undoStack.push(undoCommand)
         return label
 
-    def copyItems(self, items: List):
-        """
-        Copies the selected items in the scene, creates a duplicate of each item,
-        and adds them to the scene with a slight shift in position.
-        """
-        for item in items:
-            # Serialize the item to JSON
-            selectedItemJson = json.dumps(item, cls=symenc.symbolEncoder)
-
-            # Deserialize the JSON back to a dictionary
-            itemCopyDict = json.loads(selectedItemJson)
-
-            # Create a new shape based on the item dictionary and the snap tuple
-            shape = lj.symbolItems(self).create(itemCopyDict)
-
-            # Create an undo command for adding the shape
-            undo_command = us.addShapeUndo(self, shape)
-
-            # Push the undo command to the undo stack
-            self.undoStack.push(undo_command)
-
-            # Shift the position of the shape by one grid unit to the right and down
-            shape.setPos(
-                QPoint(
-                    item.pos().x() + 4 * self.snapTuple[0],
-                    item.pos().y() + 4 * self.snapTuple[1],
-                )
-            )
-
-    def moveBySelectedItems(self):
-        if self.selectedItems():
-            dlg = pdlg.moveByDialogue(self.editorWindow)
-            dlg.xEdit.setText("0")
-            dlg.yEdit.setText("0")
-            if dlg.exec() == QDialog.Accepted:
-                for item in self.selectedItems():
-                    item.moveBy(
-                        self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0]),
-                        self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1]),
-                    )
-            self.editorWindow.messageLine.setText(
-                f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}"
-            )
-            self.editModes.setMode("selectItem")
+    def _getItemShape(self, item):
+        selectedItemJson = json.dumps(item, cls=symenc.symbolEncoder)
+        itemCopyDict = json.loads(selectedItemJson)
+        return lj.symbolItems(self).create(itemCopyDict)
 
     def itemProperties(self):
         """
@@ -413,6 +372,8 @@ class symbolScene(editorScene):
                 self.updateSymbolCircle(item)
             elif isinstance(item, shp.symbolArc):
                 self.updateSymbolArc(item)
+            elif isinstance(item, shp.symbolFreeArc):
+                self.updateSymbolFreeArc(item)
             elif isinstance(item, shp.symbolLine):
                 self.updateSymbolLine(item)
             elif isinstance(item, shp.symbolPin):
@@ -518,6 +479,33 @@ class symbolScene(editorScene):
             newArc.width = width
             self.undoStack.push(us.addDeleteShapeUndo(self, newArc, item))
             newArc.height = height
+
+    def updateSymbolFreeArc(self, item):
+        self.queryDlg = pdlg.freeArcPropertyDialog(self.editorWindow)
+        center = item.mapToScene(item.center).toTuple()
+        self.queryDlg.centerXEdit.setText(str(center[0]))
+        self.queryDlg.centerYEdit.setText(str(center[1]))
+        self.queryDlg.radiusEdit.setText(str(item.radius))
+        self.queryDlg.startAngleEdit.setText(str(item.startAngle))
+        self.queryDlg.angleSpanEdit.setText(str(item.angleSpan))
+        origItemList = [item.center.x(), item.center.y(), item.radius, item.startAngle, item.angleSpan]
+        centerX = self.snapToBase(
+            float(self.queryDlg.centerXEdit.text()), self.snapTuple[0]
+        )
+        centerY = self.snapToBase(
+            float(self.queryDlg.centerYEdit.text()), self.snapTuple[1]
+        )
+        center = item.mapFromScene(
+            self.snapToGrid(QPoint(centerX, centerY), self.snapTuple)
+        )
+        radius = self.snapToBase(
+            float(self.queryDlg.radiusEdit.text()), self.snapTuple[0]
+        )
+        startAngle = float(self.queryDlg.startAngleEdit.text())
+        angleSpan = float(self.queryDlg.angleSpanEdit.text())
+        newItemList = [center.x(), center.y(), radius, startAngle, angleSpan]
+        undoCommand = us.updateSymFreeArcUndo(item, origItemList, newItemList)
+        self.undoStack.push(undoCommand)
 
     def updateSymbolLabel(self, item):
         self.queryDlg = pdlg.labelPropertyDialog(self.editorWindow)

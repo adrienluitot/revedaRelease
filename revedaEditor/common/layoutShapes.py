@@ -720,7 +720,6 @@ class layoutPath(layoutShape):
                 self._createVerticalPath(angle)
         tmpDraftLine = self._draftLine.translated(0,0) # hack to prevent getting a reference
         self._draftLine.setAngle(0)
-        # self._draftLine.setAngle(self._angle)
         if self._mode in [0, 3, 4]:
             # perpendicular mode -> fix coord to stay aligned with cursor
             self._fixDraftLine90(tmpDraftLine)

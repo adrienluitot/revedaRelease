@@ -260,6 +260,7 @@ class schematicNet(QGraphicsItem):
                 )
                 self._flightLinesSet.add(flightLine)
                 self.scene().addItem(flightLine)
+
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setSelected(True)
         if self.scene().editModes.moveItem:

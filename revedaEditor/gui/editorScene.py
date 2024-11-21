@@ -24,6 +24,7 @@
 #
 
 import os
+import math
 from typing import List, Sequence
 
 # import numpy as np
@@ -38,8 +39,8 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.undoStack as us
 import revedaEditor.gui.propertyDialogues as pdlg
 
-load_dotenv()
 
+load_dotenv()
 if os.environ.get("REVEDA_PDK_PATH"):
     pass
 else:
@@ -56,6 +57,7 @@ class editorScene(QGraphicsScene):
         self.snapTuple = self.editorWindow.snapTuple
         self._snapDistance = int(self.majorGrid * 0.5)
         self.mousePressLoc = None
+        self.mouseNotReleased = False
         self.mouseMoveLoc = None
         self.mouseReleaseLoc = None
         # common edit modes
@@ -70,8 +72,9 @@ class editorScene(QGraphicsScene):
         self.cellName = self.editorWindow.file.parent.stem
         self.partialSelection = True
         self._selectionRectItem = None
-        self._items = []
-        self._itemsOffset = []
+        self._lastSelects = []
+        self._itemsToMove = []
+        self._itemsToMoveOffset = []
         self.libraryDict = self.editorWindow.libraryDict
         self.itemContextMenu = QMenu()
         self.appMainW = self.editorWindow.appMainW
@@ -80,116 +83,182 @@ class editorScene(QGraphicsScene):
         self.statusLine = self.editorWindow.statusLine
         self.installEventFilter(self)
         self.setMinimumRenderSize(2)
+        self.setSceneRect(-5e5, -5e5, 1e6, 1e6) # this is to be able to zoom out more than boundingRect
+        # size might not be enough ? it may need a bigger scene rect ? or smaller devices ?
 
     def mousePressEvent(self, event):
-        super().mousePressEvent(event)
+        self.mousePressLoc = event.scenePos().toPoint()
         if event.button() == Qt.MouseButton.LeftButton:
-            self.mousePressLoc = event.scenePos().toPoint()
-            self._items = [item for item in self.selectedItems() if
-                           item.parentItem() is None]
-            if self.editModes.selectItem:
-                if not self.selectedItems():
-                    # Start a new selection rectangle
-                    self._startNewSelectionRectangle()
-            elif self.editModes.moveItem:
-                self._itemsOffset = [item.scenePos().toPoint() - self.mousePressLoc for item
-                                     in
-                                     self._items]
-            elif self.editModes.panView:
+            if self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
                 self.messageLine.setText("Pan View at mouse press position")
+            else:
+                itemsUnderCursor = self._getItemsAtLoc(self.mousePressLoc)
+                self._itemsToMove = []
+                self._itemsToMoveOffset = []
+                if len(itemsUnderCursor) > 0:
+                    moveSelected = False
+                    for item in itemsUnderCursor:
+                        if item.isSelected():
+                            moveSelected = True
+                            break
+                    if moveSelected:
+                        self._itemsToMove = [item for item in self.selectedItems() if item.parentItem() is None]
+                    else:
+                        self._itemsToMove = [sorted(itemsUnderCursor, key=lambda n:
+                                                self._distItemCenterCursor(n, self.mousePressLoc))[0]]
+                    for item in self._itemsToMove:
+                        itemPos = item.scenePos().toPoint() 
+                        #TODO: fix move position delta due to angle (need to use item width/height?):
+                        # if item.angle == 180:
+                        #     self._itemsToMoveOffset.append(self.mousePressLoc - itemPos)
+                        # else:
+                        self._itemsToMoveOffset.append(itemPos - self.mousePressLoc)
+                    #TODO: enable move mode (move btn/key M) and 2 clicks
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
+        self.mouseReleaseLoc = event.scenePos().toPoint()
+        modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
-            self.mouseReleaseLoc = event.scenePos().toPoint()
             modifiers = QGuiApplication.keyboardModifiers()
-
-            if self.editModes.moveItem and self._items:
+            if self.editModes.moveItem and len(self._itemsToMove) > 0:
                 if self.mouseReleaseLoc != self.mousePressLoc:
-                    self.moveShapesUndoStack(self._items, self._itemsOffset,
+                    self.moveShapesUndoStack(self._itemsToMove, self._itemsToMoveOffset,
                                              self.mousePressLoc,
                                              self.mouseReleaseLoc)
+                    self._itemsToMove = []
+                    self._itemsToMoveOffset = []
+                    self.editModes.setMode("selectItem")
             elif self.editModes.selectItem:
                 self._handleSelection(modifiers)
 
             self._cleanupAfterMouseRelease(modifiers)
 
     def _handleSelection(self, modifiers):
-        if modifiers == Qt.KeyboardModifier.ShiftModifier:
-            self._handleShiftSelection()
-        elif modifiers == Qt.KeyboardModifier.ControlModifier:
-            self._handleControlSelection()
-        elif modifiers == Qt.KeyboardModifier.AltModifier:
-            self._handleAltSelection()
+        addToSelection = True
+        clearSelection = False
+        if modifiers == Qt.KeyboardModifier.ControlModifier:
+            addToSelection = False # remove from selection, only with Ctrl
+        # elif modifiers == Qt.KeyboardModifier.AltModifier:
+        #     self._handleAltSelection()
+        if modifiers != Qt.KeyboardModifier.ControlModifier and modifiers != Qt.KeyboardModifier.ShiftModifier:
+            clearSelection = True
+        
+        if self._selectionRectItem:
+            self._processExistingSelectionRectangle(addToSelection, clearSelection)
         else:
-            self._handleDefaultSelection()
+            self._handleDefaultSelection(addToSelection, clearSelection)
 
     def _cleanupAfterMouseRelease(self, modifiers):
-        if self._selectionRectItem and modifiers != Qt.KeyboardModifier.ShiftModifier:
+        if self._selectionRectItem:
             self.removeItem(self._selectionRectItem)
             self._selectionRectItem = None
 
-        self._items = self.selectedItems()
-        self.messageLine.setText("Item selected" if self._items else "Nothing selected")
+        self._itemsToMove = self.selectedItems()
+        self.messageLine.setText("Item selected" if self._itemsToMove else "Nothing selected")
 
-    def _handleShiftSelection(self):
-        if self._selectionRectItem:
-            self._processExistingSelectionRectangle()
-        else:
-            self._startNewSelectionRectangle()
-
-    def _processExistingSelectionRectangle(self):
+    def _processExistingSelectionRectangle(self, addToSelection, clearSelection):
         selectionMode = Qt.ItemSelectionMode.IntersectsItemShape if self.partialSelection else Qt.ItemSelectionMode.ContainsItemShape
         selectionPath = QPainterPath()
         selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
-        self.setSelectionArea(selectionPath, mode=selectionMode)
-
-        self.removeItem(self._selectionRectItem)
-        self._selectionRectItem = None
+        if clearSelection:
+            self.clearSelection()
+        if addToSelection:
+            self.setSelectionArea(selectionPath, selectionOperation=Qt.AddToSelection, mode=selectionMode)
+        else:
+            # remove selected items from selection
+            for item in self.items(self._selectionRectItem.sceneBoundingRect()):
+                item.setSelected(False)
         self.messageLine.setText("Selection complete")
 
     def _startNewSelectionRectangle(self):
         self._selectionRectItem = QGraphicsRectItem(
-            QRectF(self.mousePressLoc, self.mousePressLoc))
+            QRectF(self.mousePressLoc, self.mouseMoveLoc)
+        )
         selectionRectPen = QPen(QColor("yellow"), 2, Qt.PenStyle.DashLine)
         selectionRectPen.setCosmetic(True)
         self._selectionRectItem.setPen(selectionRectPen)
         self.addItem(self._selectionRectItem)
 
+    def _handleAltSelection(self):
+        self.clearSelection()
+        clicked_items = self._getItemsAtLoc(self.mouseReleaseLoc)
+        if clicked_items:
+            clicked_items[0].setSelected(True)
+
+    def _handleDefaultSelection(self, addToSelection, clearSelection):
+        if self._selectionRectItem == None:
+            # get items
+            itemsAtMousePress = self._getItemsAtLoc(self.mouseReleaseLoc)
+            if len(itemsAtMousePress) == 0:
+                if clearSelection:
+                    self.clearSelection()
+                return None
+            # order by distance to cursor
+            # TODO: use a more common way ? is there a builtin way to mimic hover behaviour
+            itemsAtMousePress = sorted(itemsAtMousePress, key=lambda n: self._distItemCenterCursor(n, self.mouseReleaseLoc))
+            # verify if items list has changed
+            if itemsAtMousePress != self._lastSelects:
+                self._lastSelects = itemsAtMousePress
+            # choose item to manage
+            itemToManage = self._lastSelects[0] # by default select first
+            selectNext = False
+            for item in self._lastSelects:
+                if item.isSelected():
+                    # found a selected item
+                    if addToSelection:
+                        # and we want to add an item, manage next
+                        selectNext = True
+                    else:
+                        # we want to remove this item
+                        itemToManage = item 
+                        break
+                elif selectNext:
+                    itemToManage = item
+                    break
+
+            if clearSelection:
+                self.clearSelection()
+            itemToManage.setSelected(addToSelection)
+    
+    def _distItemCenterCursor(self, item, point):
+        center = item.pos()
+        return math.sqrt(pow(center.x() - point.x(), 2) + pow(center.y() - point.y(), 2))
+
+    def _getItemsAtLoc(self, loc):
+        itemsAtLoc = []
+        for item in self.items(loc):
+            if item.parentItem() is None:
+                itemsAtLoc.append(item)
+                item.scene()
+                # TODO: There seems to be a bug when trying to get parent of item with "None" parent -> the item is deleted.
+                # Getting its scene cancel the deletion. It seems to be the same bug as in Layout save.
+        return itemsAtLoc
+
+    def mouseMoveEvent(self, event):
+        # super().mouseMoveEvent(event)
+        self.mouseMoveLoc = event.scenePos().toPoint()
+        if event.buttons() == Qt.MouseButton.LeftButton:
+            if self._itemsToMove and self.mousePressLoc != self.mouseMoveLoc:
+                self.editModes.setMode("moveItem")
+            
+            if self.editModes.moveItem and len(self._itemsToMove) > 0:
+                for item, offset in zip(self._itemsToMove, self._itemsToMoveOffset):
+                    item.setPos(self.mouseMoveLoc + offset)
+            elif self.editModes.selectItem and len(self._itemsToMove) == 0:
+                if self._selectionRectItem:
+                    self._updateSelectionRectangle(self.mouseMoveLoc)
+                else:
+                    if len(self._getItemsAtLoc(self.mousePressLoc)) == 0:
+                        # Start a new selection rectangle
+                        self._startNewSelectionRectangle()
+    
+    
     def _updateSelectionRectangle(self, currentPos):
         if self._selectionRectItem:
             rect = QRectF(self.mousePressLoc, currentPos).normalized()
             self._selectionRectItem.setRect(rect)
-
-    def _handleControlSelection(self):
-        for item in self._getClickedItems():
-            item.setSelected(not item.isSelected())
-
-    def _handleAltSelection(self):
-        self.clearSelection()
-        clicked_items = self._getClickedItems()
-        if clicked_items:
-            clicked_items[0].setSelected(True)
-
-    def _handleDefaultSelection(self):
-        self.clearSelection()
-        for item in self._getClickedItems():
-            item.setSelected(True)
-
-    def _getClickedItems(self):
-        return [item for item in self.items(self.mouseReleaseLoc) if
-                item.parentItem() is None]
-
-    def mouseMoveEvent(self, event):
-        super().mouseMoveEvent(event)
-        if event.buttons() == Qt.MouseButton.LeftButton:
-            currentPos = event.scenePos().toPoint()
-            if self.editModes.moveItem and self._items:
-                for item, offset in zip(self._items, self._itemsOffset):
-                    item.setPos(currentPos + offset)
-            elif self.editModes.selectItem and self._selectionRectItem:
-                self._updateSelectionRectangle(currentPos)
 
     def snapToBase(self, number, base):
         """
@@ -230,6 +299,32 @@ class editorScene(QGraphicsScene):
             return super().eventFilter(source, event)
 
     def copySelectedItems(self):
+        """
+        Copies the selected items in the scene, creates a duplicate of each item,
+        and adds them to the scene with a slight shift in position.
+        """
+        selectedItems = [
+            item for item in self.selectedItems() if item.parentItem() is None
+        ]
+        for item in selectedItems:
+            # Create a new shape based on the item dictionary and the snap tuple
+            shape = self._getItemShape(item) # editorType dependant
+            # Create an undo command for adding the shape
+            undo_command = us.addShapeUndo(self, shape)
+            # Push the undo command to the undo stack
+            self.undoStack.push(undo_command)
+            # Shift the position of the shape by one grid unit to the right and down
+            #TODO: copy to cursor next click
+            shape.setPos(
+                QPoint(
+                    item.pos().x() + 4 * self.snapTuple[0],
+                    item.pos().y() + 4 * self.snapTuple[1],
+                )
+            )
+        self.editModes.setMode("selectItem") # TODO: might be a better way to switch back automatically to edit mode
+                                            # rather than put it everywhere ?
+
+    def _getItemShape(self, item):
         pass
 
     def flipHorizontal(self):
@@ -255,7 +350,6 @@ class editorScene(QGraphicsScene):
     def deleteSelectedItems(self):
         if self.selectedItems() is not None:
             for item in self.selectedItems():
-                # self.removeItem(item)
                 undoCommand = us.deleteShapeUndo(self, item)
                 self.undoStack.push(undoCommand)
             self.update()  # update the scene
@@ -270,37 +364,47 @@ class editorScene(QGraphicsScene):
                 self.messageLine.setText("Nothing selected")
 
     def fitItemsInView(self) -> None:
-        self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))
-        self.views()[0].fitInView(self.sceneRect(), Qt.KeepAspectRatio)
+        # TODO: itemsBoundingRect() processes all the items in the view, it might be very slow if the number of item is
+        # consequent. We should find a better solution (like storing the items in the extreme postions to compute the 
+        # bounding rect with only 4 items instead of N)
+        self.views()[0].fitInView(self.itemsBoundingRect().adjusted(-40, -40, 40, 40), Qt.KeepAspectRatio)
         self.views()[0].viewport().update()
 
+    def moveSceneVer(self, moveFactor) -> None:
+        view = self.views()[0]
+        currScroll = view.verticalScrollBar().value()
+        shift = moveFactor/360 * view.viewport().height()/2
+        view.verticalScrollBar().setValue(currScroll - shift)
+
+    def moveSceneHor(self, moveFactor) -> None:
+        view = self.views()[0]
+        currScroll = view.horizontalScrollBar().value()
+        shift = moveFactor/360 * view.viewport().width()/2
+        view.horizontalScrollBar().setValue(currScroll - shift)
+
     def moveSceneLeft(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(currentSceneRect.left() - halfWidth, currentSceneRect.top(),
-                              currentSceneRect.width(), currentSceneRect.height(), )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.horizontalScrollBar().value()
+        newScroll = currScroll - view.viewport().width()/3
+        view.horizontalScrollBar().setValue(newScroll)
 
     def moveSceneRight(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(currentSceneRect.left() + halfWidth, currentSceneRect.top(),
-                              currentSceneRect.width(), currentSceneRect.height(), )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.horizontalScrollBar().value()
+        newScroll = currScroll + view.viewport().width()/3
+        view.horizontalScrollBar().setValue(newScroll)
 
     def moveSceneUp(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(currentSceneRect.left(), currentSceneRect.top() - halfWidth,
-                              currentSceneRect.width(), currentSceneRect.height(), )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.verticalScrollBar().value()
+        newScroll = currScroll - view.viewport().height()/3
+        view.verticalScrollBar().setValue(newScroll)
 
     def moveSceneDown(self) -> None:
-        currentSceneRect = self.sceneRect()
-        halfWidth = currentSceneRect.width() / 2.0
-        newSceneRect = QRectF(currentSceneRect.left(), currentSceneRect.top() + halfWidth,
-                              currentSceneRect.width(), currentSceneRect.height(), )
-        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        currScroll = view.verticalScrollBar().value()
+        newScroll = currScroll + view.viewport().height()/3
+        view.verticalScrollBar().setValue(newScroll)
 
     def centerViewOnPoint(self, point: QPoint) -> None:
         view = self.views()[0]
@@ -328,24 +432,27 @@ class editorScene(QGraphicsScene):
         self.undoStack.push(undoCommand)
 
     def addUndoMacroStack(self, undoCommands: list, macroName: str = "Macro"):
-        self.undoStack.beginMacro(macroName)
-        for command in undoCommands:
-            self.undoStack.push(command)
-        self.undoStack.endMacro()
+        if len(undoCommands) > 0:
+            self.undoStack.beginMacro(macroName)
+            for command in undoCommands:
+                self.undoStack.push(command)
+            self.undoStack.endMacro()
 
     def moveBySelectedItems(self):
         if self.selectedItems():
             dlg = pdlg.moveByDialogue(self.editorWindow)
-            dlg.xEdit.setText("0")
-            dlg.yEdit.setText("0")
+            dlg.xEdit.setText("0.0")
+            dlg.yEdit.setText("0.0")
+            factor = fabproc.dbu if(self.editorType == "lay") else 1.0
             if dlg.exec() == QDialog.Accepted:
-                dx = self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0])
-                dy = self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1])
-                moveCommand = us.undoMoveByCommand(self, self.selectedItems(), dx, dy)
-                self.undoStack.push(moveCommand)
-                self.editorWindow.messageLine.setText(
-                    f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}")
-                self.editModes.setMode("selectItem")
+                for item in self.selectedItems():
+                    dx = self.snapToBase(float(dlg.xEdit.text()) * factor, self.snapTuple[0])
+                    dy = self.snapToBase(float(dlg.yEdit.text()) * factor, self.snapTuple[1])
+                    moveCommand = us.undoMoveByCommand(self, self.selectedItems(), dx, dy)
+                    self.undoStack.push(moveCommand)
+                    self.editorWindow.messageLine.setText(
+                        f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}")
+                    self.editModes.setMode("selectItem")
 
     def cellNameComplete(self, dlg: QDialog, cellNameList: List[str]):
         cellNameCompleter = QCompleter(cellNameList)

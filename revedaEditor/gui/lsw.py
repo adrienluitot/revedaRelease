@@ -60,14 +60,15 @@ class layerDataModel(QStandardItemModel):
         self.setHeaderData(3, Qt.Horizontal, "V")
         self.setHeaderData(4, Qt.Horizontal, "S")
 
+        reveda_pdk_path = os.environ.get("REVEDA_PDK_PATH", None)
+        if reveda_pdk_path is None:
+            reveda_pdk_pathobj = Path(__file__).parent.parent.joinpath("defaultPDK")
+        else:
+            reveda_pdk_pathobj = pathlib.Path(reveda_pdk_path).joinpath("pdk")
+
         for row, layer in enumerate(self._data):
             self.insertRow(row)
             # bitmap = QBitmap.fromImage(QPixmap(layer.btexture).scaled(5, 5).toImage())
-            reveda_pdk_path = os.environ.get("REVEDA_PDK_PATH", None)
-            if reveda_pdk_path is None:
-                reveda_pdk_pathobj = Path(__file__).parent.parent.joinpath("defaultPDK")
-            else:
-                reveda_pdk_pathobj = pathlib.Path(reveda_pdk_path)
             texturePath = reveda_pdk_pathobj.joinpath(layer.btexture)
             _bitmap = QBitmap.fromImage(self.createImage(texturePath, layer.bcolor))
             # bitmap = QBitmap.fromImage(QPixmap(layer.btexture).scaled(QSize(4, 4),

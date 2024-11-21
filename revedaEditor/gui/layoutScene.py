@@ -23,7 +23,6 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-# from hashlib import new
 import inspect
 import json
 import os
@@ -70,8 +69,7 @@ class layoutScene(editorScene):
         super().__init__(parent)
         self.selectEdLayer = laylyr.pdkAllLayers[0]
         self.layoutShapes = ["Inst", "Rect", "Path", "Label", "Via", "Pin", "Polygon",
-                             "Pcell",
-                             "Ruler", ]
+                             "Pcell", "Ruler", ]
         # draw modes
         self.editModes = ddef.layoutModes(selectItem=False, deleteItem=False,
                                           moveItem=False,
@@ -83,6 +81,7 @@ class layoutScene(editorScene):
                                           drawCircle=False, drawRuler=False,
                                           stretchItem=False,
                                           addInstance=False, )
+        self.editorType = "lay"
         self.editModes.setMode("selectItem")
         self.selectModes = ddef.layoutSelectModes(selectAll=True, selectPath=False,
                                                   selectInstance=False, selectVia=False,
@@ -152,21 +151,56 @@ class layoutScene(editorScene):
         point *= fabproc.dbu
         return point
 
-    def mousePressEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
-        """
-        Handle the mouse press event.
+    def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseReleaseEvent(mouse_event)
+        self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
+        modifiers = QGuiApplication.keyboardModifiers()
+        try:
+            if mouse_event.button() == Qt.LeftButton:
+                if self.editModes.drawPath:
+                    self.drawLayoutPath()
+                elif self.editModes.drawRect:
+                    self.drawLayoutRect()
+                elif self.editModes.drawPin:
+                    self.drawLayoutPin()
+                elif self.editModes.addLabel:
+                    self.addLayoutLabel()
+                elif self.editModes.addInstance:
+                    self.addLayoutInstance()
+                elif self.editModes.drawPolygon:
+                    self.drawLayoutPolygon()
+                elif self.editModes.drawRuler:
+                    self.drawLayoutRuler()
+                elif self.editModes.addVia:
+                    self.addLayoutViaArray()
+                elif self.editModes.changeOrigin:
+                    self.origin = self.mouseReleaseLoc
+                elif self.editModes.rotateItem:
+                    self.editorWindow.messageLine.setText("Rotate item")
+                    if self.selectedItems():
+                        # Rotate selected items
+                        self.rotateSelectedItems(self.mouseReleaseLoc)
 
-        Args:
-            mouse_event: The mouse event object.
+        except Exception as e:
+            self.logger.error(f"mouse release error: {e}")
+    
+    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
+        # TODO: might be managed in mouse press/release event, checking if click location is same as before => double click
+        # Could be managed in editor scene in press/release, stop continue, and call a custom class method "managedoubleClick"
+        if event.button() == Qt.LeftButton:
+            if self._newPath is not None:
+                self._endPath(True)
+            elif self._newRect is not None:
+                self._newRect = None
+        self.editModes.setMode("selectItem")
 
-        Returns:
-            None
-        """
-        # Store the mouse press location
-        self.mousePressLoc = mouse_event.scenePos().toPoint()
-        # Call the base class mouse press event
-        super().mousePressEvent(mouse_event)
-
+    def _endPath(self, finishPath):
+        if not finishPath:
+            self.removeItem(self._newPath) # remove preview before adding it with undo stack
+        if not self._newPath.draftLine.isNull():
+            self.addUndoStack(self._newPath)
+        self._newPath = None
+    
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         """
         Handle the mouse move event.
@@ -177,8 +211,6 @@ class layoutScene(editorScene):
         Returns:
             None
         """
-        # Get the current mouse position
-        self.mouseMoveLoc = mouse_event.scenePos().toPoint()
         # Call the parent class's mouseMoveEvent method
         super().mouseMoveEvent(mouse_event)
         # Get the keyboard modifiers
@@ -212,47 +244,12 @@ class layoutScene(editorScene):
         elif self.editModes.stretchItem and self._stretchPath is not None:
             self._stretchPath.draftLine = QLineF(self._stretchPath.draftLine.p1(),
                                                  self.mouseMoveLoc)
-        elif self.editModes.selectItem and self._selectionRectItem is not None:
-            self._selectionRectItem.setRect(QRect(self.mouseReleaseLoc, self.mouseMoveLoc))
+
         # Calculate the cursor position in layout units
         cursorPosition = self.toLayoutCoord(self.mouseMoveLoc - self.origin)
-
         # Show the cursor position in the status line
         self.statusLine.showMessage(
             f"Cursor Position: ({cursorPosition.x()}, {cursorPosition.y()})")
-
-    def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
-        super().mouseReleaseEvent(mouse_event)
-        self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
-        modifiers = QGuiApplication.keyboardModifiers()
-        try:
-            if mouse_event.button() == Qt.LeftButton:
-                if self.editModes.drawPath:
-                    self.drawLayoutPath()
-                elif self.editModes.drawRect:
-                    self.drawLayoutRect()
-                elif self.editModes.drawPin:
-                    self.drawLayoutPin()
-                elif self.editModes.addLabel:
-                    self.addLayoutLabel()
-                elif self.editModes.addInstance:
-                    self.addLayoutInstance()
-                elif self.editModes.drawPolygon:
-                    self.drawLayoutPolygon()
-                elif self.editModes.drawRuler:
-                    self.drawLayoutRuler()
-                elif self.editModes.addVia:
-                    self.addLayoutViaArray()
-                elif self.editModes.changeOrigin:
-                    self.origin = self.mouseReleaseLoc
-                elif self.editModes.rotateItem:
-                    self.editorWindow.messageLine.setText("Rotate item")
-                    if self.selectedItems():
-                        # Rotate selected items
-                        self.rotateSelectedItems(self.mouseReleaseLoc)
-
-        except Exception as e:
-            self.logger.error(f"mouse release error: {e}")
 
     def addLayoutViaArray(self):
         if self._arrayVia is not None:
@@ -341,18 +338,23 @@ class layoutScene(editorScene):
     def drawLayoutPath(self):
         self.editorWindow.messageLine.setText("Path mode")
         if self._newPath:
-            if self._newPath.draftLine.isNull():
-                self.undoStack.removeLastCommand()
-            self._newPath = None
+            startPoint = QLineF(self._newPath.sceneEndPoints[1], self._newPath.sceneEndPoints[1])
+            # TODO: take in account start/end extend to avoid a hole ?
+            self._endPath(False)
+            # TODO: this is called 2 times when double clicking (0 time would be better). It is not really a
+            # problem, but if the user move its mouse during the double click, it will create a path before
+            # finishing it.
+        else:
+            startPoint = QLineF(self.mousePressLoc, self.mousePressLoc)
 
-            # Create a new path
-        self._newPath = lshp.layoutPath(QLineF(self.mousePressLoc, self.mousePressLoc),
+        # Create a new path
+        self._newPath = lshp.layoutPath(startPoint,
                                         self.newPathTuple.layer, self.newPathTuple.width,
                                         self.newPathTuple.startExtend,
                                         self.newPathTuple.endExtend,
                                         self.newPathTuple.mode, )
         self._newPath.name = self.newPathTuple.name
-        self.addUndoStack(self._newPath)
+        self.addItem(self._newPath)
 
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)
@@ -448,12 +450,18 @@ class layoutScene(editorScene):
             None
         """
         try:
-            # Only save the top-level items
-
-            topLevelItems = list(
-                {item for item in self.items() if item.parentItem() is None})
+            topLevelItems = []
             topLevelItems.insert(0, {"viewType": "layout"})
             topLevelItems.insert(1, {"snapGrid": self.snapTuple})
+            # Only save the top-level items
+            topLevelItems.extend(
+                [item for item in self.items() if item.parentItem() is None]
+            )
+            # refresh view to avoid to delete if has no parent 
+            [ item.scene() for item in self.items() if item.parentItem() is None]
+            # TODO: This is a strange behaviour, if item has no parentItem it is removed/hidden from the scene
+            # calling the getter .scene() seem to refresh the item or whatever. There must be a better way to
+            # fix this. Schematic items don't seem to have a similar bug
             with filePathObj.open("w") as file:
                 # Serialize items to JSON using layoutEncoder class
                 json.dump(topLevelItems, file, cls=layenc.layoutEncoder)
@@ -507,9 +515,8 @@ class layoutScene(editorScene):
         loadedLayoutItems = [lj.layoutItems(self).create(item) for item in decodedData if
                              item.get("type") in validTypes]
 
-        if loadedLayoutItems:
-            undoCommand = us.loadShapesUndo(self, loadedLayoutItems)
-            self.undoStack.push(undoCommand)
+        for item in loadedLayoutItems:
+                self.addItem(item)
 
     def reloadScene(self):
         # Get the top level items from the scene
@@ -529,6 +536,16 @@ class layoutScene(editorScene):
                 undoCommand = us.deleteShapeUndo(self, item.label)
                 self.undoStack.push(undoCommand)
         super().deleteSelectedItems()
+
+    def _getItemShape(self, item):
+        selectedItemJson = json.dumps(item, cls=layenc.layoutEncoder)
+        itemCopyDict = json.loads(selectedItemJson)
+        if  itemCopyDict["type"] in ["Inst", "Pcell"]:
+            self.itemCounter += 1
+            shape.instanceName = f"I{self.itemCounter}"
+            shape.counter = self.itemCounter
+        return lj.layoutItems(self).create(itemCopyDict)
+
 
     def viewObjProperties(self):
         """
@@ -884,21 +901,6 @@ class layoutScene(editorScene):
                 child.widget().deleteLater()
             elif child.layout():
                 self.clearLayout(child.layout())
-
-    def moveBySelectedItems(self):
-        if self.selectedItems():
-            dlg = pdlg.moveByDialogue(self.editorWindow)
-            dlg.xEdit.setText("0.0")
-            dlg.yEdit.setText("0.0")
-            if dlg.exec() == QDialog.Accepted:
-                for item in self.selectedItems():
-                    item.moveBy(self.snapToBase(float(dlg.xEdit.text()) * fabproc.dbu,
-                                                self.snapTuple[0]),
-                                self.snapToBase(float(dlg.yEdit.text()) * fabproc.dbu,
-                                                self.snapTuple[1]), )
-                self.editorWindow.messageLine.setText(
-                    f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}")
-                self.editModes.setMode("selectItem")
 
     def deleteAllRulers(self):
         for ruler in self.rulersSet:

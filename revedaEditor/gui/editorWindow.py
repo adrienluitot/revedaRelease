@@ -683,8 +683,8 @@ class editorWindow(QMainWindow):
         self.centralW.scene.editModes.setMode("changeOrigin")
 
     def undoClick(self, s):
-        for i in range(self.centralW.scene.undoStack.count()):
-            print(f'command {i}: {self.centralW.scene.undoStack.command(i).text()}')
+        # for i in range(self.centralW.scene.undoStack.count()):
+        #     print(f'command {i}: {self.centralW.scene.undoStack.command(i).text()}')
         self.messageLine.setText(self.centralW.scene.undoStack.undoText())
         self.centralW.scene.undoStack.undo()
         
