@@ -21,7 +21,7 @@ venv/
 .gitmodules
 .env
 .DS_Store
-
-
-ihp_sg13g2/
 user_libs/
+/nbproject/
+/.ropeproject/
+library.json

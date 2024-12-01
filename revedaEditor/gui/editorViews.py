@@ -351,7 +351,7 @@ class schematicView(editorView):
             if isinstance(guideLineItem, net.guideLine)
         }
         self.removeSnapLines(viewSnapLinesSet)
-        self.mergeSplitViewNets()
+        # self.mergeSplitViewNets()
 
     def mergeSplitViewNets(self):
         netsInView = [
@@ -414,7 +414,8 @@ class schematicView(editorView):
             self.scene.removeSnapRect()
             if self.scene._newNet is not None:
                 # New net creation mode, cancel creation
-                self.scene.removeItem(self.scene._newNet)
+                #self.scene.removeItem(self.scene._newNet) # TODO: check behaviour
+                self.scene.wireFinished.emit(self.scene._newNet)
                 self.scene._newNet = None
             elif self.scene._stretchNet is not None:
                 # Stretch net mode, cancel stretch
